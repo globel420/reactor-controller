@@ -53,7 +53,19 @@ This guide provides instructions for setting up both the **embedded firmware** (
       - **Relay Output Terminals**:
         - **Channel 1 (Buzzer)**: Wire the buzzer's external power supply in series through the **COM** (Common) and **NO** (Normally Open) terminals.
         - **Channel 2 (Overhead Stirrer)**: Wire the overhead stirrer's external power supply in series through the **COM** (Common) and **NO** (Normally Open) terminals.
-3. Ensure the TB6600 Stepper Driver is correctly wired to the Uno (Pins 8, 9, 10).
+3. Wire the **TB6600 Stepper Driver** to the **Arduino Uno** and pump motor:
+   - **Control Signals (Common Cathode Configuration)**:
+     | Arduino Uno Pin | Signal Name | TB6600 Driver Terminal | Description |
+     | :--- | :--- | :--- | :--- |
+     | **Pin 8** | `ENA_PIN` | **`ENA+`** (Enable) | Enables / disables motor holding torque |
+     | **Pin 9** | `STEP_PIN` | **`PUL+`** (Pulse / Step / CLK) | Step pulse input |
+     | **Pin 10** | `DIR_PIN` | **`DIR+`** (Direction / CW) | Direction control |
+     | **GND** | Ground | **`ENA-`**, **`PUL-`**, **`DIR-`** | Common Ground (bridge all 3 together to Uno GND) |
+   - **Motor & Power Connections**:
+     - **`VCC` / `PWR`**: Dedicated external **+12V to +24V DC** power supply (never use Arduino 5V).
+     - **`GND`**: External power supply ground (**0V**).
+     - **`A+` / `A-`**: Stepper motor Phase A coil wires.
+     - **`B+` / `B-`**: Stepper motor Phase B coil wires.
 4. Ensure the Raspberry Pi is connected to the network.
 
 ---
@@ -63,23 +75,30 @@ This guide provides instructions for setting up both the **embedded firmware** (
 The system uses two separate firmware projects built with **PlatformIO**.
 
 ### Option A: VS Code (Recommended)
+
 1. Install **Visual Studio Code** and the **PlatformIO IDE** extension.
 2. Open the `firmware` folder to flash the **Sensor Arduino** (Mega).
 3. Open the `pump_firmware` folder to flash the **Pump Arduino** (Uno).
 4. Use the PlatformIO sidebar to Upload to the respective boards.
 
 ### Option B: Command Line (CLI) - Linux/Raspberry Pi
+
 1. Install PlatformIO Core:
+
    ```bash
    curl -fsSL -o get-platformio.py https://raw.githubusercontent.com/platformio/platformio-core-installer/master/get-platformio.py
    python3 get-platformio.py
    ```
+
 2. Flash the Sensor Arduino:
+
    ```bash
    cd ~/reactor-controller/firmware
    ~/.platformio/penv/bin/pio run -t upload
    ```
+
 3. Flash the Pump Arduino:
+
    ```bash
    cd ~/reactor-controller/pump_firmware
    ~/.platformio/penv/bin/pio run -t upload
@@ -92,18 +111,22 @@ The system uses two separate firmware projects built with **PlatformIO**.
 We provide an automated deployment script to handle installation on the Raspberry Pi.
 
 ### Automated Installation
+
 1. Copy `deploy_pi.py` to your Raspberry Pi.
 2. Run the script:
+
    ```bash
    python3 deploy_pi.py
    ```
+
    *This script will:*
-   * Install system dependencies (`git`, `python3-venv`).
-   * Clone this repository to `~/reactor-controller`.
-   * Create a virtual environment and install Python requirements.
-   * Add your user to the `dialout` group for serial access.
+   - Install system dependencies (`git`, `python3-venv`).
+   - Clone this repository to `~/reactor-controller`.
+   - Create a virtual environment and install Python requirements.
+   - Add your user to the `dialout` group for serial access.
 
 ### Running the Application
+
 After installation, the script will provide instructions. To start the server manually:
 
 ```bash
@@ -112,6 +135,7 @@ cd ~/reactor-controller
 ```
 
 ### Accessing the Interface
+
 Open a web browser on any device on the same network and navigate to:
 `http://<RASPBERRY_PI_IP>:8000`
 
@@ -126,10 +150,12 @@ To develop or test the supervisory control logic without physical hardware (Ardu
 Ensure you have **Docker** and **Docker Compose** installed and running.
 
 1. Build and start the services:
+
    ```bash
    docker compose build
    docker compose up
    ```
+
    *This starts:*
    - **supervisory** (FastAPI at `http://localhost:8000`)
    - **sensor_emulator** (TCP port `9999`)
@@ -142,16 +168,19 @@ Ensure you have **Docker** and **Docker Compose** installed and running.
 You can run the emulators and FastAPI app directly on your local machine using Python.
 
 1. Install Python dependencies:
+
    ```bash
    pip install -r supervisory/requirements.txt
    ```
 
 2. Start the **Pump Emulator** in a terminal:
+
    ```bash
    python emulators/pump_emulator.py
    ```
 
 3. Start the **Sensor Emulator** in another terminal:
+
    ```bash
    # Linux/macOS
    export PUMP_EMULATOR_HOST=localhost
@@ -163,6 +192,7 @@ You can run the emulators and FastAPI app directly on your local machine using P
    ```
 
 4. Start the **Supervisory Controller** pointing to the local socket emulators:
+
    ```bash
    # Linux/macOS
    export APP_ENV=development
@@ -180,5 +210,13 @@ You can run the emulators and FastAPI app directly on your local machine using P
 ## Troubleshooting
 
 - **Serial Permission Denied**: If you get a "Permission denied" error when identifying the serial port, ensure you have rebooted or logged out/in after the installation script added you to the `dialout` group.
-- **Port Not Found**: Check that the Arduino is connected. You can verify it appears in `/dev/ttyACM*` or `/dev/ttyUSB*`.
+- **Port Not Found (`/dev/pump_arduino` or `/dev/sensor_arduino`)**:
+  - The Arduinos are mapped by `udev` rules based on USB Vendor/Product IDs in `/etc/udev/rules.d/99-arduinos.rules`.
+  - **Sensor Arduino** (Arduino Mega): Vendor `2341`, Product `0042` -> `/dev/sensor_arduino`
+  - **Pump Arduino** (Official Arduino Uno R3): Vendor `2341`, Product `0043` -> `/dev/pump_arduino`
+  - **Pump Arduino** (Generic/Clone CH340 Uno): Vendor `1a86`, Product `7523` -> `/dev/pump_arduino`
+  - If you swap Arduino boards, run `lsusb` to confirm the IDs, update `/etc/udev/rules.d/99-arduinos.rules`, and reload with:
+    ```bash
+    sudo udevadm control --reload-rules && sudo udevadm trigger
+    ```
 - **Blank Web Page**: Ensure you are using a modern browser. Check the JS console (F12) for errors.

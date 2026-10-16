@@ -115,7 +115,11 @@ def main():
             
     # 6. Configure UDEV rules for dual Arduinos
     print_step("Configuring UDEV rules for Arduino predictability...")
-    udev_rules = 'SUBSYSTEM=="tty", ATTRS{idVendor}=="2341", ATTRS{idProduct}=="0042", SYMLINK+="sensor_arduino"\nSUBSYSTEM=="tty", ATTRS{idVendor}=="1a86", ATTRS{idProduct}=="7523", SYMLINK+="pump_arduino"\n'
+    udev_rules = (
+        'SUBSYSTEM=="tty", ATTRS{idVendor}=="2341", ATTRS{idProduct}=="0042", SYMLINK+="sensor_arduino"\n'
+        'SUBSYSTEM=="tty", ATTRS{idVendor}=="2341", ATTRS{idProduct}=="0043", SYMLINK+="pump_arduino"\n'
+        'SUBSYSTEM=="tty", ATTRS{idVendor}=="1a86", ATTRS{idProduct}=="7523", SYMLINK+="pump_arduino"\n'
+    )
     try:
         rule_path = "/tmp/99-arduinos.rules"
         with open(rule_path, "w") as f:
