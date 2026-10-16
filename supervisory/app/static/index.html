@@ -325,7 +325,7 @@
                     </div>
 
                     {/* Process Cards */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                         {/* Feedstock Pump */}
                         <PumpCard pump={l.pump} />
 
@@ -333,9 +333,6 @@
                         <LoadCellCard weight={s.weight} 
                             onTare={() => fetch('/api/control/tare', { method: 'POST' })}
                             onCalibrate={(w) => fetch(`/api/control/calibrate?value=${w}`, { method: 'POST' })} />
-
-                        {/* Overhead Stirrer */}
-                        <StirrerCard stirrerState={l.stirrer} />
 
                         {/* H2 Sensor */}
                         <SensorCard title="H2 Sensor" value={s.h2} unit="ppm" color="text-pink-400" border="border-pink-500" />
@@ -1150,70 +1147,6 @@
                                     }
                                 }}>CALIBRATE</button>
                         </div>
-                    </div>
-                </div>
-            );
-        }
-
-        function StirrerCard({ stirrerState }) {
-            const [enabled, setEnabled] = useState(false);
-            const [loading, setLoading] = useState(false);
-
-            useEffect(() => {
-                if (stirrerState !== undefined && stirrerState !== null) {
-                    setEnabled(Boolean(stirrerState));
-                }
-            }, [stirrerState]);
-
-            const handleToggle = async () => {
-                const nextState = !enabled;
-                setLoading(true);
-                try {
-                    await fetch(`/api/control/stirrer?enabled=${nextState}`, { method: 'POST' });
-                    setEnabled(nextState);
-                } catch (e) {
-                    console.error("Failed to set stirrer state", e);
-                } finally {
-                    setLoading(false);
-                }
-            };
-
-            return (
-                <div className="bg-gray-800 p-4 rounded-lg border border-cyan-500 shadow shadow-cyan-900/20 relative overflow-hidden flex flex-col justify-between">
-                    <div className="flex justify-between items-center mb-2">
-                        <h3 className="text-lg font-semibold text-cyan-400">Overhead Stirrer</h3>
-                        <span className={`text-xs px-2 py-0.5 rounded font-bold font-mono ${enabled ? 'bg-cyan-900/80 text-cyan-300 border border-cyan-500' : 'bg-gray-900 text-gray-400 border border-gray-700'}`}>
-                            RELAY CH 2
-                        </span>
-                    </div>
-
-                    <div className="my-3 flex items-center justify-between bg-gray-900/60 p-3 rounded-lg border border-gray-700/60">
-                        <div>
-                            <div className="text-xs text-gray-400 font-medium uppercase tracking-wider">Power Status</div>
-                            <div className={`text-xl font-bold font-mono mt-0.5 ${enabled ? 'text-cyan-400 animate-pulse' : 'text-gray-400'}`}>
-                                {enabled ? 'POWER ON' : 'POWER OFF'}
-                            </div>
-                        </div>
-
-                        <button 
-                            onClick={handleToggle}
-                            disabled={loading}
-                            className={`relative inline-flex h-8 w-16 items-center rounded-full transition-colors focus:outline-none ring-2 ring-offset-2 ring-offset-gray-800 ${
-                                enabled ? 'bg-cyan-500 ring-cyan-400' : 'bg-gray-700 ring-gray-600'
-                            } disabled:opacity-50`}
-                            title="Toggle Overhead Stirrer Power"
-                        >
-                            <span 
-                                className={`inline-block h-6 w-6 transform rounded-full bg-white transition-transform ${
-                                    enabled ? 'translate-x-9' : 'translate-x-1'
-                                }`} 
-                            />
-                        </button>
-                    </div>
-
-                    <div className="text-xs text-gray-400 flex items-center justify-between">
-                        <span>Default: OFF</span>
-                        <span className="font-mono text-[11px] text-gray-400">GPIO 20 (Pin 38)</span>
                     </div>
                 </div>
             );

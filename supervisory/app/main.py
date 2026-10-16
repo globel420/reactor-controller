@@ -44,11 +44,6 @@ async def set_setpoint(zone: int, value: float, rate: float = 0.0):
     await orchestrator.send_setpoint(zone, value, rate)
     return {"status": "command_sent", "zone": zone, "value": value, "rate": rate}
 
-@app.post("/api/control/stirrer")
-async def set_stirrer(enabled: bool):
-    state = orchestrator.set_stirrer(enabled)
-    return {"status": "ok", "stirrer": state}
-
 @app.post("/api/control/alarm/silence")
 async def silence_alarm():
     return orchestrator.silence_alarms()

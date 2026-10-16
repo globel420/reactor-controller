@@ -57,29 +57,6 @@ class Orchestrator:
                     return self.value
             self.buzzer_relay = MockRelay()
 
-        self.stirrer_relay = None
-        self.stirrer_state = False
-        try:
-            from gpiozero import OutputDevice
-            # IN2 driven HIGH closes relay (stirrer ON), driven LOW opens relay (stirrer OFF)
-            self.stirrer_relay = OutputDevice(settings.STIRRER_RELAY_PIN, active_high=True, initial_value=False)
-            self.stirrer_relay.off()
-            logger.info(f"Initialized Stirrer Relay on GPIO {settings.STIRRER_RELAY_PIN} (Active High)")
-        except Exception as e:
-            logger.warning(f"Could not initialize native GPIO stirrer relay: {e}. Falling back to mock relay.")
-            class MockStirrerRelay:
-                def __init__(self):
-                    self.value = False
-                def on(self):
-                    self.value = True
-                    logger.debug("MOCK STIRRER RELAY: CLOSED (Stirrer ON)")
-                def off(self):
-                    self.value = False
-                    logger.debug("MOCK STIRRER RELAY: OPEN (Stirrer OFF)")
-                @property
-                def is_active(self):
-                    return self.value
-            self.stirrer_relay = MockStirrerRelay()
         
         # Pump State
         self.pump_mode = "manual"
@@ -461,8 +438,6 @@ class Orchestrator:
                 "auto_dir": self.auto_dir
             }
 
-            # Inject stirrer state into telemetry
-            data["stirrer"] = self.stirrer_state
 
             # 2. Update internal state
             self.latest_state = data
@@ -591,8 +566,7 @@ class Orchestrator:
                         "auto_max": self.auto_max,
                         "auto_rec_rpm": self.auto_rec_rpm,
                         "auto_dir": self.auto_dir
-                    },
-                    "stirrer": self.stirrer_state
+                    }
                 }
                 self.latest_state = offline_state
                 for q in list(self.subscribers):
@@ -674,16 +648,6 @@ class Orchestrator:
 
     async def set_state(self, state: int):
         await serial_link.send_command({"cmd": "SET_STATE", "state": state})
-
-    def set_stirrer(self, enabled: bool):
-        self.stirrer_state = enabled
-        if self.stirrer_relay:
-            if enabled:
-                self.stirrer_relay.on()
-            else:
-                self.stirrer_relay.off()
-        logger.info(f"Stirrer set to {'ON' if enabled else 'OFF'}")
-        return self.stirrer_state
 
     async def send_tare(self):
         await serial_link.send_command({"cmd": "TARE_LOADCELL"})

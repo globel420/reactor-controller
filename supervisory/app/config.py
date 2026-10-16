@@ -19,6 +19,5 @@ class Settings:
 
     DATABASE_URL: str = "sqlite:///./reactor_logs.db"
     BUZZER_RELAY_PIN: int = int(os.getenv("BUZZER_RELAY_PIN", "26"))
-    STIRRER_RELAY_PIN: int = int(os.getenv("STIRRER_RELAY_PIN", "20"))
     
 settings = Settings()
