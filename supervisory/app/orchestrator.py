@@ -557,15 +557,13 @@ class Orchestrator:
             self.latest_state = data
             self.live_buffer.append(data)
             
-            # 3. Log to Database (Only during WARMUP or WORKING)
+            # 3. Log to Database (Record telemetry across all states including STANDBY)
             try:
                 uptime = data.get("uptime", 0)
                 state = data.get("state", 0)
                 
-                # State 1 = WARMUP, State 2 = WORKING
-                if state in [1, 2]:
-                    with SessionLocal() as db:
-                        create_log(db, data, uptime, state, run_id=self.active_run_id, analytics=analytics)
+                with SessionLocal() as db:
+                    create_log(db, data, uptime, state, run_id=self.active_run_id, analytics=analytics)
             except Exception as e:
                 logger.error(f"DB Log Error: {e}")
 

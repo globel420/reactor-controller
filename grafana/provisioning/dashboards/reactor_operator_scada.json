@@ -92,7 +92,7 @@
         {
           "queryType": "table",
           "refId": "A",
-          "queryText": "SELECT CASE control_state WHEN 0 THEN 'STANDBY' WHEN 1 THEN 'WARMUP' WHEN 2 THEN 'WORKING' ELSE 'UNKNOWN' END AS \"State\" FROM logs_1s WHERE ('$run' IN ('$__all', '__ALL__', 'All', '') OR run_id = CAST('$run' AS INT)) ORDER BY timestamp DESC LIMIT 1"
+          "queryText": "SELECT CASE control_state WHEN 0 THEN 'STANDBY' WHEN 1 THEN 'WARMUP' WHEN 2 THEN 'WORKING' ELSE 'UNKNOWN' END AS \"State\" FROM logs_1s ORDER BY timestamp DESC LIMIT 1"
         }
       ]
     },
@@ -148,7 +148,7 @@
         {
           "queryType": "table",
           "refId": "A",
-          "queryText": "SELECT CAST(strftime('%s', timestamp) AS INT) AS time, temp_liq_reac AS \"Liquid\" FROM logs_1s WHERE ('$run' IN ('$__all', '__ALL__', 'All', '') OR run_id = CAST('$run' AS INT)) ORDER BY timestamp ASC",
+          "queryText": "SELECT CAST(strftime('%s', timestamp) AS INT) AS time, temp_liq_reac AS \"Liquid\" FROM logs_1s ORDER BY timestamp ASC",
           "timeColumns": [
             "time"
           ]
@@ -203,7 +203,7 @@
         {
           "queryType": "table",
           "refId": "A",
-          "queryText": "SELECT CAST(strftime('%s', timestamp) AS INT) AS time, temp_gas_reac_int AS \"Gas Core\" FROM logs_1s WHERE ('$run' IN ('$__all', '__ALL__', 'All', '') OR run_id = CAST('$run' AS INT)) ORDER BY timestamp ASC",
+          "queryText": "SELECT CAST(strftime('%s', timestamp) AS INT) AS time, temp_gas_reac_int AS \"Gas Core\" FROM logs_1s ORDER BY timestamp ASC",
           "timeColumns": [
             "time"
           ]
@@ -258,7 +258,7 @@
         {
           "queryType": "table",
           "refId": "A",
-          "queryText": "SELECT CAST(strftime('%s', timestamp) AS INT) AS time, temp_feed_pre AS \"Preheater\" FROM logs_1s WHERE ('$run' IN ('$__all', '__ALL__', 'All', '') OR run_id = CAST('$run' AS INT)) ORDER BY timestamp ASC",
+          "queryText": "SELECT CAST(strftime('%s', timestamp) AS INT) AS time, temp_feed_pre AS \"Preheater\" FROM logs_1s ORDER BY timestamp ASC",
           "timeColumns": [
             "time"
           ]
@@ -313,7 +313,7 @@
         {
           "queryType": "table",
           "refId": "A",
-          "queryText": "SELECT CAST(strftime('%s', timestamp) AS INT) AS time, ROUND(dosing_rate_g_min, 2) AS \"Flow (g/min)\" FROM logs_1s WHERE ('$run' IN ('$__all', '__ALL__', 'All', '') OR run_id = CAST('$run' AS INT)) ORDER BY timestamp ASC",
+          "queryText": "SELECT CAST(strftime('%s', timestamp) AS INT) AS time, ROUND(dosing_rate_g_min, 2) AS \"Flow (g/min)\" FROM logs_1s ORDER BY timestamp ASC",
           "timeColumns": [
             "time"
           ]
@@ -368,7 +368,7 @@
         {
           "queryType": "table",
           "refId": "A",
-          "queryText": "SELECT CAST(strftime('%s', timestamp) AS INT) AS time, energy_kwh AS \"Energy (kWh)\" FROM logs_1s WHERE ('$run' IN ('$__all', '__ALL__', 'All', '') OR run_id = CAST('$run' AS INT)) ORDER BY timestamp ASC",
+          "queryText": "SELECT CAST(strftime('%s', timestamp) AS INT) AS time, energy_kwh AS \"Energy (kWh)\" FROM logs_1s ORDER BY timestamp ASC",
           "timeColumns": [
             "time"
           ]
@@ -468,7 +468,7 @@
         {
           "queryType": "table",
           "refId": "A",
-          "queryText": "SELECT CAST(strftime('%s', timestamp) AS INT) AS time, temp_liq_reac AS \"Liquid Core\", temp_gas_reac_int AS \"Gas Core\", temp_feed_pre AS \"Preheater\", temp_gas_reac_ext AS \"Gas Skin\" FROM logs_1s WHERE ('$run' IN ('$__all', '__ALL__', 'All', '') OR run_id = CAST('$run' AS INT)) ORDER BY timestamp ASC",
+          "queryText": "SELECT CAST(strftime('%s', timestamp) AS INT) AS time, temp_liq_reac AS \"Liquid Core\", temp_gas_reac_int AS \"Gas Core\", temp_feed_pre AS \"Preheater\", temp_gas_reac_ext AS \"Gas Skin\" FROM logs_1s ORDER BY timestamp ASC",
           "timeColumns": [
             "time"
           ]
@@ -526,7 +526,7 @@
         {
           "queryType": "table",
           "refId": "A",
-          "queryText": "SELECT temp_liq_reac AS \"Liquid Core\", temp_gas_reac_int AS \"Gas Headspace\", temp_feed_pre AS \"Preheater\", temp_gas_reac_ext AS \"Gas Skin\", temp_feed_res AS \"Feed Tank\" FROM logs_1s WHERE ('$run' IN ('$__all', '__ALL__', 'All', '') OR run_id = CAST('$run' AS INT)) ORDER BY timestamp DESC LIMIT 1"
+          "queryText": "SELECT temp_liq_reac AS \"Liquid Core\", temp_gas_reac_int AS \"Gas Headspace\", temp_feed_pre AS \"Preheater\", temp_gas_reac_ext AS \"Gas Skin\", temp_feed_res AS \"Feed Tank\" FROM logs_1s ORDER BY timestamp DESC LIMIT 1"
         }
       ]
     },
@@ -564,7 +564,7 @@
         {
           "queryType": "table",
           "refId": "A",
-          "queryText": "SELECT CAST(strftime('%s', timestamp) AS INT) AS time, weight AS \"Tank Weight (g)\" FROM logs_1s WHERE ('$run' IN ('$__all', '__ALL__', 'All', '') OR run_id = CAST('$run' AS INT)) ORDER BY timestamp ASC",
+          "queryText": "SELECT CAST(strftime('%s', timestamp) AS INT) AS time, weight AS \"Tank Weight (g)\" FROM logs_1s ORDER BY timestamp ASC",
           "timeColumns": [
             "time"
           ]
@@ -648,7 +648,7 @@
         {
           "queryType": "table",
           "refId": "A",
-          "queryText": "SELECT CAST(strftime('%s', timestamp) AS INT) AS time, ROUND(heater_feed_pre, 1) AS \"Preheater PWM\", ROUND(heater_liq_reac, 1) AS \"Liquid Core PWM\", ROUND(heater_gas_reac, 1) AS \"Gas Core PWM\" FROM logs_1s WHERE ('$run' IN ('$__all', '__ALL__', 'All', '') OR run_id = CAST('$run' AS INT)) ORDER BY timestamp ASC",
+          "queryText": "SELECT CAST(strftime('%s', timestamp) AS INT) AS time, ROUND(heater_feed_pre, 1) AS \"Preheater PWM\", ROUND(heater_liq_reac, 1) AS \"Liquid Core PWM\", ROUND(heater_gas_reac, 1) AS \"Gas Core PWM\" FROM logs_1s ORDER BY timestamp ASC",
           "timeColumns": [
             "time"
           ]
@@ -697,7 +697,7 @@
         {
           "queryType": "table",
           "refId": "A",
-          "queryText": "SELECT h2_ppm AS \"H2 Concentration\" FROM logs_1s WHERE ('$run' IN ('$__all', '__ALL__', 'All', '') OR run_id = CAST('$run' AS INT)) ORDER BY timestamp DESC LIMIT 1"
+          "queryText": "SELECT h2_ppm AS \"H2 Concentration\" FROM logs_1s ORDER BY timestamp DESC LIMIT 1"
         }
       ]
     },
@@ -736,30 +736,7 @@
     "operator"
   ],
   "templating": {
-    "list": [
-      {
-        "allValue": null,
-        "current": {
-          "selected": true,
-          "text": "All Runs",
-          "value": "$__all"
-        },
-        "datasource": {
-          "type": "frser-sqlite-datasource",
-          "uid": "Reactor-SQLite"
-        },
-        "definition": "SELECT id AS __value, run_name || ' (Run #' || id || ')' AS __text FROM runs_metadata ORDER BY id DESC",
-        "hide": 0,
-        "includeAll": true,
-        "label": "Run",
-        "multi": false,
-        "name": "run",
-        "options": [],
-        "query": "SELECT id AS __value, run_name || ' (Run #' || id || ')' AS __text FROM runs_metadata ORDER BY id DESC",
-        "refresh": 1,
-        "type": "query"
-      }
-    ]
+    "list": []
   },
   "time": {
     "from": "now-6h",
