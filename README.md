@@ -24,7 +24,7 @@
 [![Tailscale](https://img.shields.io/badge/Mesh%20VPN-Tailscale-6366f1?style=for-the-badge&logo=tailscale&logoColor=white)](https://github.com/globel420/reactor-controller)
 [![Hardware](https://img.shields.io/badge/Hardware-Pi%204%20%2F%20Pi%205%20%2B%20Dual%20MCU-ec4899?style=for-the-badge&logo=raspberrypi&logoColor=white)](https://github.com/globel420/reactor-controller)
 
-[Quick Start](#-60-second-quick-start) • [Architecture](#-system-architecture) • [Dashboard Views](#-dual-interface-scada-vs-controls) • [Hardware Wiring](#-hardware-topology--pinout) • [Setup Guide](FRIEND_SETUP_GUIDE.md)
+[Quick Start](#-60-second-quick-start) • [Architecture](#-system-architecture) • [Dashboard Views](#-dual-interface-scada-vs-controls) • [Hardware Wiring](#-hardware-topology--pinout) • [Peer Review](#-engineering-peer-review--safety-guarantees) • [Roadmap](#-strategic-roadmap--recommended-next-steps) • [Setup Guide](FRIEND_SETUP_GUIDE.md)
 
 </div>
 
@@ -221,6 +221,62 @@ docker exec -it reactor_supervisory pytest /app/supervisory/tests -v
 ```text
 ======================= 24 passed in 2.48s =======================
 ```
+
+---
+
+## 🔍 Engineering Peer Review & Safety Guarantees
+
+This architecture has been engineered for high-temperature chemical reactor operations where hardware reliability, deterministic fail-safes, and zero-loss telemetry are mandatory.
+
+```
+┌────────────────────────────────────────────────────────────────────────┐
+│                      CORE SAFETY INTERLOCK MATRIX                      │
+├─────────────────────────┬─────────────────────────┬────────────────────┤
+│ Trigger Event           │ System Reaction         │ Latched Action     │
+├─────────────────────────┼─────────────────────────┼────────────────────┤
+│ E-STOP Button Pressed   │ Instant SSR Zero (0%)   │ GPIO 26 Siren ON   │
+│ RTD Sensor Open/Fault   │ Auto-Retreat to STANDBY │ Error Audit Logged │
+│ Serial Link Loss (>3s)  │ Hardware PWM Clamp (0%) │ Motor EN Disabled  │
+│ MQ-8 Gas Spike (>300ppm)│ Liquid Heating Halted   │ Visual Alert Pulse │
+│ Setpoint Deviation >15°C│ Warmup Progress Blocked │ Operator Hold Wait │
+└─────────────────────────┴─────────────────────────┴────────────────────┘
+```
+
+* **Deterministic 3-State Finite State Machine (FSM)**:
+  * Strict monotonic validation between `STANDBY` (0), `WARMUP` (1), and `WORKING` (2).
+  * Automatic progression from Warmup to Working occurs **only** when all active thermal zones stabilize within $\pm 5.0^\circ\text{C}$ of setpoint for $\ge 5.0$ continuous seconds.
+  * Any unhandled exception, unrecognized state code, or sensor communication dropout forces an instantaneous, non-blocking retreat back to `STANDBY`.
+* **Hardware Watchdog & Loss-of-Comm Failsafe**:
+  * Bidirectional 1Hz heartbeat stream between Raspberry Pi supervisory daemon and Arduino Mega firmware.
+  * If the serial packet stream drops for $> 3.0\,\text{s}$, the Mega firmware independently clamps all heater SSR duty cycles to 0%, disengages the Uno stepper driver `EN` line, and trips the local alarm.
+* **Zero-Lock High-Concurrency Storage (SQLite WAL)**:
+  * Configured with `PRAGMA journal_mode = WAL`, `PRAGMA synchronous = NORMAL`, and `PRAGMA busy_timeout = 5000`.
+  * Writers (FastAPI 1Hz telemetry ingestion) never block concurrent readers (Grafana SCADA telemetry engine), eliminating database locks on embedded ARM flash storage.
+* **MAX31865 Hardware Diagnostics & Fault Decoding**:
+  * Real-time bitmask decoding of the MAX31865 fault register (`0x07`):
+    * **Bit 7**: $V_{BIAS}$ High / Low Threshold Fault.
+    * **Bit 6**: RTD In- High / Low Fault ($< 0.85 \times V_{BIAS}$).
+    * **Bit 5**: RTD In- Voltage Open Sensor Fault.
+    * **Bit 4**: RTD In+ Voltage Open Sensor Fault.
+    * **Bit 2**: Over-Voltage / Under-Voltage Fault.
+  * Faults are timestamped into `error_logs` and broadcasted via WebSockets in real time.
+* **Fail-Safe Emergency Stop (E-STOP)**:
+  * Single-click software E-STOP and external hardware loop immediately zeroes all PWM duty cycles, disengages TB6600 motor driver enable pins, activates the physical 5V buzzer relay on GPIO 26, and writes an immutable audit record.
+
+---
+
+## 🚀 Strategic Roadmap & Recommended Next Steps
+
+Prioritized engineering milestones for production deployment and field testing:
+
+| Priority | Milestone | Technical Scope | Target Deliverable |
+|---|---|---|---|
+| **P1** | **Physical RTD Calibration** | 2-point ice bath ($0.0^\circ\text{C}$) and boiling water ($100.0^\circ\text{C}$) calibration suite. | Verify $R_{ref} \approx 430.0\Omega$ reference resistors and cable resistance offsets on MAX31865 breakout boards before high-temp runs. |
+| **P2** | **Multi-Stage Recipe Engine** | Programmable multi-segment execution profiles (JSON/YAML recipes). | Automated Ramp / Soak / Dwell stages with dynamic dosing rates ($g/\text{min}$) and condition-based stage branching. |
+| **P3** | **Grafana Out-of-Bounds Alerts** | Integrated Grafana alerting with multi-channel push webhooks. | Real-time push notifications (Discord / Slack / Telegram / SMTP) on core temperature limits ($> 240^\circ\text{C}$) or MQ-8 hydrogen leaks ($> 250\,\text{ppm}$). |
+| **P4** | **Automated WAL Snapshots** | Scheduled non-blocking SQLite backups. | Automated daily `VACUUM INTO '/backups/reactor_YYYYMMDD.db'` and off-site cloud replication via `rclone` / S3 to protect against flash wear. |
+| **P5** | **Relay-Feedback PID Auto-Tuning** | Automated limit-cycle oscillation routine (Ziegler-Nichols method). | Self-tuning algorithm calculating optimal $K_p, K_i, K_d$ constants per thermal zone based on vessel thermal mass. |
+| **P6** | **Native HTTPS / Reverse Proxy** | Bundled `tailscale cert` provisioning or Caddy reverse proxy sidecar. | End-to-end TLS encryption on `:8000` / `:3000` to eliminate browser mixed-content warnings when embedding Grafana iframes. |
 
 ---
 

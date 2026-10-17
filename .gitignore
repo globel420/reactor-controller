@@ -3,6 +3,10 @@ __pycache__/
 *.pyo
 *.pyd
 *.db
+*.db-wal
+*.db-shm
+.pytest_cache/
 .vscode/
 .pio/
 .build/
+

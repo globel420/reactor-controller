@@ -1,3 +1,33 @@
+"""
+Database Schema & High-Concurrency Telemetry Engine
+===================================================
+
+Provides the SQLAlchemy ORM models, connection pooling, SQLite WAL pragma tuning,
+and automated schema migration routines for the Reactor Controller supervisory stack.
+
+Architecture Highlights:
+------------------------
+1. Zero-Lock Concurrency (WAL Mode):
+   - Configures SQLite with `PRAGMA journal_mode = WAL` (Write-Ahead Logging).
+   - Allows concurrent non-blocking reads by the Grafana SCADA engine while
+     the FastAPI supervisory daemon writes continuous 1Hz telemetry.
+   - `PRAGMA synchronous = NORMAL` optimizes SSD/SD-card flash wear without
+     compromising transaction durability.
+   - `PRAGMA busy_timeout = 5000` eliminates transient "database is locked" errors
+     during high-frequency analytical queries.
+
+2. Hierarchical Downsampling Schema:
+   - `Logs1s`    : Raw 1-second telemetry stream (24-hour retention).
+   - `Logs1m`    : 1-minute averaged rollups with statistical aggregates (30-day retention).
+   - `Logs10m`   : 10-minute rollups for permanent multi-month experimental archives.
+
+3. State & Configuration Persistence:
+   - `RunsMetadata`: Partitions experimental runs, tracks cumulative energy (kWh)
+     and reagent consumption, and persists setpoints & pump states across power cycles.
+   - `ErrorLog`    : Permanent hardware fault audit trail (MAX31865 RTD error flags,
+     disconnected thermocouples, thermal limits).
+"""
+
 from sqlalchemy import create_engine, event, text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
 from datetime import datetime
@@ -20,6 +50,7 @@ engine = create_engine(settings.DATABASE_URL, connect_args=connect_args)
 if "sqlite" in settings.DATABASE_URL:
     @event.listens_for(engine, "connect")
     def set_sqlite_pragma(dbapi_connection, connection_record):
+        """Set SQLite WAL mode and busy timeout on every new connection."""
         cursor = dbapi_connection.cursor()
         cursor.execute("PRAGMA journal_mode=WAL")
         cursor.execute("PRAGMA synchronous=NORMAL")
@@ -32,6 +63,11 @@ class Base(DeclarativeBase):
     pass
 
 class ErrorLog(Base):
+    """
+    Persistent audit trail for hardware faults and safety interlocks.
+    Tracks MAX31865 RTD faults (open sensor, over/under-voltage), sensor dropouts,
+    and out-of-spec thermal conditions with both trigger and clearance timestamps.
+    """
     __tablename__ = "error_logs"
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -41,6 +77,12 @@ class ErrorLog(Base):
     cleared_timestamp: Mapped[Optional[datetime]] = mapped_column(nullable=True, default=None)
 
 class RunsMetadata(Base):
+    """
+    Experimental Run Metadata & Configuration Persistence.
+    Partitions continuous telemetry into distinct experimental batches, storing
+    start/end timestamps, descriptions, and the last known operator setpoints
+    so the reactor can resume cleanly following a restart or power interruption.
+    """
     __tablename__ = "runs_metadata"
     
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -116,6 +158,16 @@ class Logs10m(Base, LogMixin):
     id: Mapped[int] = mapped_column(primary_key=True)
 
 def init_db():
+    """
+    Initialize database tables and run non-destructive schema migrations.
+    
+    1. Creates all tables (`runs_metadata`, `error_logs`, `logs_1s`, `logs_1m`, `logs_10m`)
+       if they do not already exist.
+    2. Inspects existing tables via `PRAGMA table_info` and safely performs `ALTER TABLE ADD COLUMN`
+       for any newly introduced runtime state and analytics columns without dropping historical data.
+    3. Builds composite index `idx_<table>_run_ts` on `(run_id, timestamp)` for high-performance
+       partitioned telemetry queries.
+    """
     Base.metadata.create_all(bind=engine)
     with engine.connect() as conn:
         try:
@@ -161,8 +213,13 @@ def init_db():
             pass
 
 def get_db():
+    """
+    FastAPI dependency yielding a thread-local SQLAlchemy database session.
+    Guarantees session closure upon request completion to prevent connection leaks.
+    """
     db = SessionLocal()
     try:
         yield db
     finally:
         db.close()
+
