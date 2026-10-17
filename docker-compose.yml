@@ -10,11 +10,11 @@ services:
       - "8000:8000"
     environment:
       - APP_ENV=${APP_ENV:-development}
-      - DATABASE_URL=sqlite:///./reactor_logs.db
+      - DATABASE_URL=sqlite:////app/data/reactor_logs.db
       - SERIAL_PORT=${SERIAL_PORT:-socket://sensor_emulator:9999}
       - PUMP_PORT=${PUMP_PORT:-socket://pump_emulator:9998}
     volumes:
-      - ./reactor_logs.db:/app/reactor_logs.db
+      - ./data:/app/data
     restart: unless-stopped
     depends_on:
       - sensor_emulator
@@ -31,7 +31,7 @@ services:
       - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
       - GF_INSTALL_PLUGINS=fr-ser-sqlite-datasource
     volumes:
-      - ./reactor_logs.db:/data/reactor.db:ro
+      - ./data:/data:ro
       - ./grafana/provisioning:/etc/grafana/provisioning:ro
     restart: unless-stopped
     depends_on:

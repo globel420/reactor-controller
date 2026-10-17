@@ -17,7 +17,7 @@ class Settings:
     PUMP_PORT: str = os.getenv("PUMP_PORT", _default_pump_port)
     PUMP_BAUD: int = 9600
 
-    DATABASE_URL: str = "sqlite:///./reactor_logs.db"
+    DATABASE_URL: str = os.getenv("DATABASE_URL", "sqlite:///./reactor_logs.db")
     BUZZER_RELAY_PIN: int = int(os.getenv("BUZZER_RELAY_PIN", "26"))
     
     # Data retention policies in hours (0 = infinite / retain permanently)

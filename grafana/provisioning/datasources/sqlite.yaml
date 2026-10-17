@@ -6,6 +6,6 @@ datasources:
     access: proxy
     isDefault: true
     jsonData:
-      path: /data/reactor.db
+      path: /data/reactor_logs.db
     readOnly: true
     editable: true

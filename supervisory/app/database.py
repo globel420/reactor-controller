@@ -2,12 +2,18 @@ from sqlalchemy import create_engine, event, text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
 from datetime import datetime
 from typing import Optional
+import os
 from .config import settings
 
 # Database Setup with SQLite WAL & timeout configuration
 connect_args = {"check_same_thread": False}
 if "sqlite" in settings.DATABASE_URL:
     connect_args["timeout"] = 15
+    if settings.DATABASE_URL.startswith("sqlite:///"):
+        db_file_path = settings.DATABASE_URL.replace("sqlite:///", "")
+        db_dir = os.path.dirname(db_file_path)
+        if db_dir:
+            os.makedirs(db_dir, exist_ok=True)
 
 engine = create_engine(settings.DATABASE_URL, connect_args=connect_args)
 
