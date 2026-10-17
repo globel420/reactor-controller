@@ -1,12 +1,13 @@
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
-from typing import List
+from typing import List, Optional
+from datetime import datetime
 from .orchestrator import orchestrator
-from .database import engine, Base, get_db, RunsMetadata, Logs1s, Logs1m, Logs10m
+from .database import engine, Base, get_db, RunsMetadata, Logs1s, Logs1m, Logs10m, ErrorLog
 from sqlalchemy.orm import Session
 from fastapi import Depends
-from .crud import get_history_downsampled
+from .crud import get_history_downsampled, get_error_logs
 from fastapi.responses import StreamingResponse
 import io
 import csv
@@ -17,7 +18,7 @@ async def lifespan(app: FastAPI):
     await orchestrator.start()
     yield
     # Shutdown
-    # orchestrator.stop()
+    await orchestrator.stop()
 
 app = FastAPI(title="Reactor Controller", lifespan=lifespan)
 
@@ -78,16 +79,29 @@ async def pump_auto(min_w: float, max_w: float, rec_rpm: int, dir: int = 0):
     return {"status": "ok"}
 
 @app.get("/api/history")
-async def get_history(hours: float = 0.083, db: Session = Depends(get_db)):
+async def get_history(hours: float = 0.083, run_id: Optional[int] = None, db: Session = Depends(get_db)):
     if hours <= 0:
         return list(orchestrator.live_buffer)
-    return get_history_downsampled(db, hours)
+    target_run = run_id if run_id is not None else getattr(orchestrator, "active_run_id", None)
+    return get_history_downsampled(db, hours, run_id=target_run)
 
 @app.get("/api/errors")
 async def get_errors(limit: int = 100, db: Session = Depends(get_db)):
     return get_error_logs(db, limit)
 
 # --- Run Management Endpoints ---
+
+@app.get("/api/runs")
+async def list_runs(db: Session = Depends(get_db)):
+    runs = db.query(RunsMetadata).order_by(RunsMetadata.id.desc()).all()
+    return [{
+        "id": r.id,
+        "run_name": r.run_name,
+        "start_time": r.start_time.isoformat() if r.start_time else None,
+        "end_time": r.end_time.isoformat() if r.end_time else None,
+        "status": r.status,
+        "description": getattr(r, "description", "")
+    } for r in runs]
 
 @app.get("/api/run/status")
 async def get_run_status(db: Session = Depends(get_db)):
@@ -126,39 +140,48 @@ async def resume_run():
     return {"status": "ok", "restored": restored}
 
 @app.post("/api/run/new")
-async def start_new_run(run_name: str, db: Session = Depends(get_db)):
-    # Clear all previous run logs & metadata
-    db.query(Logs1s).delete()
-    db.query(Logs1m).delete()
-    db.query(Logs10m).delete()
-    db.query(ErrorLog).delete()
-    db.query(RunsMetadata).delete()
-    db.commit()
+async def start_new_run(run_name: str, description: str = "", db: Session = Depends(get_db)):
+    # Complete any existing active runs
+    active_runs = db.query(RunsMetadata).filter(RunsMetadata.status == "active").all()
+    for r in active_runs:
+        r.status = "completed"
+        r.end_time = datetime.utcnow()
     
-    # Create new active run
-    new_run = RunsMetadata(run_name=run_name, status="active")
+    # Create new active run record without deleting historical logs
+    new_run = RunsMetadata(run_name=run_name, status="active", description=description, start_time=datetime.utcnow())
     db.add(new_run)
     db.commit()
+    db.refresh(new_run)
     
-    return {"status": "ok", "run_name": run_name}
+    # Update orchestrator context
+    orchestrator.active_run_id = new_run.id
+    orchestrator.active_run_name = new_run.run_name
+    orchestrator.live_buffer.clear()
+    
+    return {"status": "ok", "run_id": new_run.id, "run_name": run_name}
 
 @app.get("/api/run/export")
-async def export_run(db: Session = Depends(get_db)):
-    run_meta = db.query(RunsMetadata).order_by(RunsMetadata.id.desc()).first()
+async def export_run(run_id: Optional[int] = None, db: Session = Depends(get_db)):
+    target_id = run_id if run_id is not None else getattr(orchestrator, "active_run_id", None)
+    run_meta = db.query(RunsMetadata).filter(RunsMetadata.id == target_id).first() if target_id else db.query(RunsMetadata).order_by(RunsMetadata.id.desc()).first()
     run_name = run_meta.run_name if run_meta else "reactor_run"
     
-    logs = db.query(Logs1s).order_by(Logs1s.timestamp.asc()).all()
+    q = db.query(Logs1s)
+    if target_id is not None:
+        q = q.filter(Logs1s.run_id == target_id)
+    logs = q.order_by(Logs1s.timestamp.asc()).all()
     
     # Create CSV
     output = io.StringIO()
     writer = csv.writer(output)
     
     # Header
-    writer.writerow(["Timestamp", "Uptime", "State", "Temp_Feed_Res", "Temp_Feed_Pre", "Temp_Liq_Reac", "Temp_Gas_Reac_Int", "Temp_Gas_Reac_Ext", "Weight", "Pump_Speed", "H2_ppm"])
+    writer.writerow(["Timestamp", "Run_ID", "Uptime", "State", "Temp_Feed_Res", "Temp_Feed_Pre", "Temp_Liq_Reac", "Temp_Gas_Reac_Int", "Temp_Gas_Reac_Ext", "Weight", "Pump_Speed", "H2_ppm"])
     
     for log in logs:
         writer.writerow([
-            log.timestamp.isoformat(),
+            log.timestamp.isoformat() if log.timestamp else "",
+            getattr(log, "run_id", 1),
             log.uptime,
             log.control_state,
             log.temp_feed_res,

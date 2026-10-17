@@ -135,6 +135,15 @@ void loop() {
 }
 
 void checkSafety(SensorData &data) {
+  unsigned long now = millis();
+  if (now - lastHeartbeatTime > HEARTBEAT_TIMEOUT) {
+    if (currentState != STATE_STANDBY) {
+      currentState = STATE_STANDBY;
+      heaters.setEnabled(false);
+      comms.sendError("WATCHDOG_HEARTBEAT_TIMEOUT");
+    }
+  }
+
   if ((!isnan(data.tempFeedstockPreheater) && data.tempFeedstockPreheater > MAX_TEMP_C_PREHEATER) ||
       (!isnan(data.tempLiquidReactor) && data.tempLiquidReactor > MAX_TEMP_C_LIQUID_REACTOR) ||
       (!isnan(data.tempGasReactorInt) && data.tempGasReactorInt > MAX_TEMP_C_GAS_REACTOR) ||
@@ -142,6 +151,7 @@ void checkSafety(SensorData &data) {
       (!isnan(data.tempElectronicsHousing) && data.tempElectronicsHousing > MAX_TEMP_C_HOUSING)) {
     if (currentState != STATE_STANDBY) {
       currentState = STATE_STANDBY;
+      heaters.setEnabled(false);
       comms.sendError("THERMAL_SAFETY_LIMIT_EXCEEDED");
     }
   }

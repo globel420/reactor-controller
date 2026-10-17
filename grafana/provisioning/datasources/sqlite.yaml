@@ -1,0 +1,11 @@
+apiVersion: 1
+
+datasources:
+  - name: Reactor-SQLite
+    type: fr-ser-sqlite-datasource
+    access: proxy
+    isDefault: true
+    jsonData:
+      path: /data/reactor.db
+    readOnly: true
+    editable: true

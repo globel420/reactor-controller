@@ -64,13 +64,13 @@ def run_backfill_and_prune(db_path: str, raw_retention_hours: float = 1.5, rollu
         print("\n[Step 1/4] Aggregating 1-second raw data into 1-minute rollup buckets...")
         sql_1m = """
             INSERT INTO logs_1m (
-                timestamp, uptime, control_state, temp_feed_res, temp_feed_pre, temp_liq_reac,
+                run_id, timestamp, uptime, control_state, temp_feed_res, temp_feed_pre, temp_liq_reac,
                 temp_gas_reac_int, temp_gas_reac_ext, h2_ppm, weight, pump_speed,
                 heater_feed_pre, heater_liq_reac, heater_gas_reac,
                 sp_feed_pre, sp_liq_reac, sp_gas_reac
             )
             SELECT 
-                MAX(timestamp), AVG(uptime), MAX(control_state), AVG(temp_feed_res), AVG(temp_feed_pre), AVG(temp_liq_reac),
+                COALESCE(MAX(run_id), 1), MAX(timestamp), AVG(uptime), MAX(control_state), AVG(temp_feed_res), AVG(temp_feed_pre), AVG(temp_liq_reac),
                 AVG(temp_gas_reac_int), AVG(temp_gas_reac_ext), AVG(h2_ppm), AVG(weight), AVG(pump_speed),
                 AVG(heater_feed_pre), AVG(heater_liq_reac), AVG(heater_gas_reac),
                 AVG(sp_feed_pre), AVG(sp_liq_reac), AVG(sp_gas_reac)
@@ -89,13 +89,13 @@ def run_backfill_and_prune(db_path: str, raw_retention_hours: float = 1.5, rollu
         print("\n[Step 2/4] Aggregating 1-minute data into 10-minute rollup buckets...")
         sql_10m = """
             INSERT INTO logs_10m (
-                timestamp, uptime, control_state, temp_feed_res, temp_feed_pre, temp_liq_reac,
+                run_id, timestamp, uptime, control_state, temp_feed_res, temp_feed_pre, temp_liq_reac,
                 temp_gas_reac_int, temp_gas_reac_ext, h2_ppm, weight, pump_speed,
                 heater_feed_pre, heater_liq_reac, heater_gas_reac,
                 sp_feed_pre, sp_liq_reac, sp_gas_reac
             )
             SELECT 
-                MAX(timestamp), AVG(uptime), MAX(control_state), AVG(temp_feed_res), AVG(temp_feed_pre), AVG(temp_liq_reac),
+                COALESCE(MAX(run_id), 1), MAX(timestamp), AVG(uptime), MAX(control_state), AVG(temp_feed_res), AVG(temp_feed_pre), AVG(temp_liq_reac),
                 AVG(temp_gas_reac_int), AVG(temp_gas_reac_ext), AVG(h2_ppm), AVG(weight), AVG(pump_speed),
                 AVG(heater_feed_pre), AVG(heater_liq_reac), AVG(heater_gas_reac),
                 AVG(sp_feed_pre), AVG(sp_liq_reac), AVG(sp_gas_reac)

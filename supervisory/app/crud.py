@@ -1,6 +1,7 @@
 from sqlalchemy.orm import Session
 from .database import Logs1s, Logs1m, Logs10m, RunsMetadata, ErrorLog
 from datetime import datetime, timedelta
+from typing import Optional
 
 def create_error_log(db: Session, sensor: str, exact_error: str) -> ErrorLog:
     log = ErrorLog(
@@ -50,7 +51,7 @@ def update_last_run_config(db: Session, sp: dict, pump: dict):
         if "auto_dir" in pump: run_meta.last_auto_dir = int(pump.get("auto_dir") or 0)
         db.commit()
 
-def create_log(db: Session, data: dict, uptime: float, state: int):
+def create_log(db: Session, data: dict, uptime: float, state: int, run_id: int = 1):
     # Map dictionary keys (from JSON) to Model fields
     # JSON keys: t_gas, t_feed... -> Model: temp_gas, temp_feed...
     
@@ -61,6 +62,7 @@ def create_log(db: Session, data: dict, uptime: float, state: int):
     pump = data.get("pump", {})
     
     db_log = Logs1s(
+        run_id=run_id,
         uptime=uptime,
         control_state=state,
         
@@ -88,7 +90,7 @@ def create_log(db: Session, data: dict, uptime: float, state: int):
     db.commit()
     return db_log
 
-def get_history_downsampled(db: Session, hours: float, max_points: int = 300):
+def get_history_downsampled(db: Session, hours: float, max_points: int = 300, run_id: Optional[int] = None):
     cutoff = datetime.utcnow() - timedelta(hours=hours)
     
     # Select database table based on time horizon
@@ -104,7 +106,10 @@ def get_history_downsampled(db: Session, hours: float, max_points: int = 300):
         
     logs = []
     for Table in candidate_tables:
-        logs = db.query(Table).filter(Table.timestamp >= cutoff).order_by(Table.timestamp.asc()).all()
+        q = db.query(Table).filter(Table.timestamp >= cutoff)
+        if run_id is not None:
+            q = q.filter(Table.run_id == run_id)
+        logs = q.order_by(Table.timestamp.asc()).all()
         if logs:
             break
             
@@ -122,6 +127,7 @@ def get_history_downsampled(db: Session, hours: float, max_points: int = 300):
             ts_str += "Z"
             
         result.append({
+            "run_id": getattr(log, "run_id", 1),
             "ts": ts_str,
             "uptime": log.uptime,
             "state": log.control_state,
@@ -155,13 +161,13 @@ from sqlalchemy import text
 def perform_1m_rollup(db: Session):
     sql = text("""
         INSERT INTO logs_1m (
-            timestamp, uptime, control_state, temp_feed_res, temp_feed_pre, temp_liq_reac,
+            run_id, timestamp, uptime, control_state, temp_feed_res, temp_feed_pre, temp_liq_reac,
             temp_gas_reac_int, temp_gas_reac_ext, h2_ppm, weight, pump_speed,
             heater_feed_pre, heater_liq_reac, heater_gas_reac,
             sp_feed_pre, sp_liq_reac, sp_gas_reac
         )
         SELECT 
-            MAX(timestamp), AVG(uptime), MAX(control_state), AVG(temp_feed_res), AVG(temp_feed_pre), AVG(temp_liq_reac),
+            COALESCE(MAX(run_id), 1), MAX(timestamp), AVG(uptime), MAX(control_state), AVG(temp_feed_res), AVG(temp_feed_pre), AVG(temp_liq_reac),
             AVG(temp_gas_reac_int), AVG(temp_gas_reac_ext), AVG(h2_ppm), AVG(weight), AVG(pump_speed),
             AVG(heater_feed_pre), AVG(heater_liq_reac), AVG(heater_gas_reac),
             AVG(sp_feed_pre), AVG(sp_liq_reac), AVG(sp_gas_reac)
@@ -176,13 +182,13 @@ def perform_1m_rollup(db: Session):
 def perform_10m_rollup(db: Session):
     sql = text("""
         INSERT INTO logs_10m (
-            timestamp, uptime, control_state, temp_feed_res, temp_feed_pre, temp_liq_reac,
+            run_id, timestamp, uptime, control_state, temp_feed_res, temp_feed_pre, temp_liq_reac,
             temp_gas_reac_int, temp_gas_reac_ext, h2_ppm, weight, pump_speed,
             heater_feed_pre, heater_liq_reac, heater_gas_reac,
             sp_feed_pre, sp_liq_reac, sp_gas_reac
         )
         SELECT 
-            MAX(timestamp), AVG(uptime), MAX(control_state), AVG(temp_feed_res), AVG(temp_feed_pre), AVG(temp_liq_reac),
+            COALESCE(MAX(run_id), 1), MAX(timestamp), AVG(uptime), MAX(control_state), AVG(temp_feed_res), AVG(temp_feed_pre), AVG(temp_liq_reac),
             AVG(temp_gas_reac_int), AVG(temp_gas_reac_ext), AVG(h2_ppm), AVG(weight), AVG(pump_speed),
             AVG(heater_feed_pre), AVG(heater_liq_reac), AVG(heater_gas_reac),
             AVG(sp_feed_pre), AVG(sp_liq_reac), AVG(sp_gas_reac)
@@ -194,10 +200,13 @@ def perform_10m_rollup(db: Session):
     db.execute(sql)
     db.commit()
 
-def prune_expired_logs(db: Session, raw_retention_hours: float = 1.5, rollup_1m_retention_hours: float = 8.0):
-    raw_cutoff = datetime.utcnow() - timedelta(hours=raw_retention_hours)
-    rollup_cutoff = datetime.utcnow() - timedelta(hours=rollup_1m_retention_hours)
-    
-    db.query(Logs1s).filter(Logs1s.timestamp < raw_cutoff).delete()
-    db.query(Logs1m).filter(Logs1m.timestamp < rollup_cutoff).delete()
-    db.commit()
+def prune_expired_logs(db: Session, raw_retention_hours: float = 0.0, rollup_1m_retention_hours: float = 0.0):
+    if raw_retention_hours > 0:
+        raw_cutoff = datetime.utcnow() - timedelta(hours=raw_retention_hours)
+        db.query(Logs1s).filter(Logs1s.timestamp < raw_cutoff).delete()
+    if rollup_1m_retention_hours > 0:
+        rollup_cutoff = datetime.utcnow() - timedelta(hours=rollup_1m_retention_hours)
+        db.query(Logs1m).filter(Logs1m.timestamp < rollup_cutoff).delete()
+    if raw_retention_hours > 0 or rollup_1m_retention_hours > 0:
+        db.commit()
+

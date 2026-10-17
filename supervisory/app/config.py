@@ -20,4 +20,9 @@ class Settings:
     DATABASE_URL: str = "sqlite:///./reactor_logs.db"
     BUZZER_RELAY_PIN: int = int(os.getenv("BUZZER_RELAY_PIN", "26"))
     
+    # Data retention policies in hours (0 = infinite / retain permanently)
+    RETENTION_RAW_HOURS: float = float(os.getenv("RETENTION_RAW_HOURS", "0"))
+    RETENTION_1M_HOURS: float = float(os.getenv("RETENTION_1M_HOURS", "0"))
+    
 settings = Settings()
+

@@ -1,0 +1,216 @@
+{
+  "annotations": {
+    "list": []
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "liveNow": true,
+  "panels": [
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "id": 100,
+      "title": "Thermal Instrumentation & Regulation",
+      "type": "row"
+    },
+    {
+      "id": 1,
+      "title": "Reactor Temperatures (Live)",
+      "type": "timeseries",
+      "gridPos": { "h": 9, "w": 16, "x": 0, "y": 1 },
+      "datasource": {
+        "type": "fr-ser-sqlite-datasource",
+        "uid": "Reactor-SQLite"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "showPoints": "auto",
+            "spanNulls": true
+          },
+          "unit": "celsius"
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "Liquid Reactor" },
+            "properties": [{ "id": "color", "value": { "fixedColor": "#ef4444", "mode": "fixed" } }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Gas Headspace" },
+            "properties": [{ "id": "color", "value": { "fixedColor": "#f59e0b", "mode": "fixed" } }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Preheater" },
+            "properties": [{ "id": "color", "value": { "fixedColor": "#3b82f6", "mode": "fixed" } }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Gas Skin" },
+            "properties": [{ "id": "color", "value": { "fixedColor": "#8b5cf6", "mode": "fixed" } }]
+          }
+        ]
+      },
+      "targets": [
+        {
+          "queryType": "table",
+          "rawSql": "SELECT timestamp AS time, temp_feed_pre AS \"Preheater\", temp_liq_reac AS \"Liquid Reactor\", temp_gas_reac_int AS \"Gas Headspace\", temp_gas_reac_ext AS \"Gas Skin\", temp_feed_res AS \"Feed Tank\" FROM logs_1s WHERE ('$run' = '$__all' OR run_id = '$run') ORDER BY timestamp ASC",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Current Temperatures",
+      "type": "gauge",
+      "gridPos": { "h": 9, "w": 8, "x": 16, "y": 1 },
+      "datasource": {
+        "type": "fr-ser-sqlite-datasource",
+        "uid": "Reactor-SQLite"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "max": 600,
+          "unit": "celsius",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 200 },
+              { "color": "red", "value": 450 }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "queryType": "table",
+          "rawSql": "SELECT temp_liq_reac AS \"Liquid\", temp_gas_reac_int AS \"Gas Int\", temp_feed_pre AS \"Preheater\" FROM logs_1s WHERE ('$run' = '$__all' OR run_id = '$run') ORDER BY timestamp DESC LIMIT 1",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 10 },
+      "id": 101,
+      "title": "Heater Duty Cycles & Dosing Mass Flow",
+      "type": "row"
+    },
+    {
+      "id": 3,
+      "title": "Heater Output Duty Cycles (%)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 11 },
+      "datasource": {
+        "type": "fr-ser-sqlite-datasource",
+        "uid": "Reactor-SQLite"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "max": 100,
+          "unit": "percent",
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 20
+          }
+        }
+      },
+      "targets": [
+        {
+          "queryType": "table",
+          "rawSql": "SELECT timestamp AS time, heater_feed_pre AS \"Preheater Duty\", heater_liq_reac AS \"Liquid Duty\", heater_gas_reac AS \"Gas Duty\" FROM logs_1s WHERE ('$run' = '$__all' OR run_id = '$run') ORDER BY timestamp ASC",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Gravimetric Scale & Pump Dosing",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 11 },
+      "datasource": {
+        "type": "fr-ser-sqlite-datasource",
+        "uid": "Reactor-SQLite"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2
+          }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "Mass (kg)" },
+            "properties": [
+              { "id": "unit", "value": "masskg" },
+              { "id": "custom.axisPlacement", "value": "left" }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Pump Speed" },
+            "properties": [
+              { "id": "unit", "value": "rpm" },
+              { "id": "custom.axisPlacement", "value": "right" },
+              { "id": "color", "value": { "fixedColor": "#10b981", "mode": "fixed" } }
+            ]
+          }
+        ]
+      },
+      "targets": [
+        {
+          "queryType": "table",
+          "rawSql": "SELECT timestamp AS time, weight AS \"Mass (kg)\", pump_speed AS \"Pump Speed\" FROM logs_1s WHERE ('$run' = '$__all' OR run_id = '$run') ORDER BY timestamp ASC",
+          "refId": "A"
+        }
+      ]
+    }
+  ],
+  "refresh": "5s",
+  "schemaVersion": 39,
+  "tags": ["reactor", "telemetry"],
+  "templating": {
+    "list": [
+      {
+        "allValue": null,
+        "current": {
+          "selected": true,
+          "text": "All Runs",
+          "value": "$__all"
+        },
+        "datasource": {
+          "type": "fr-ser-sqlite-datasource",
+          "uid": "Reactor-SQLite"
+        },
+        "definition": "SELECT id AS __value, run_name || ' (Run #' || id || ')' AS __text FROM runs_metadata ORDER BY id DESC",
+        "hide": 0,
+        "includeAll": true,
+        "label": "Run",
+        "multi": false,
+        "name": "run",
+        "options": [],
+        "query": "SELECT id AS __value, run_name || ' (Run #' || id || ')' AS __text FROM runs_metadata ORDER BY id DESC",
+        "refresh": 1,
+        "type": "query"
+      }
+    ]
+  },
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "timepicker": {
+    "refresh_intervals": ["1s", "5s", "10s", "30s", "1m"]
+  },
+  "timezone": "browser",
+  "title": "Reactor Controller — Live Telemetry & Analytics",
+  "uid": "reactor-telemetry"
+}

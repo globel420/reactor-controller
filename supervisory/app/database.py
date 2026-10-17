@@ -1,17 +1,29 @@
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event, text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
-from sqlalchemy import text
 from datetime import datetime
+from typing import Optional
 from .config import settings
 
-# Database Setup
-engine = create_engine(settings.DATABASE_URL, connect_args={"check_same_thread": False})
+# Database Setup with SQLite WAL & timeout configuration
+connect_args = {"check_same_thread": False}
+if "sqlite" in settings.DATABASE_URL:
+    connect_args["timeout"] = 15
+
+engine = create_engine(settings.DATABASE_URL, connect_args=connect_args)
+
+if "sqlite" in settings.DATABASE_URL:
+    @event.listens_for(engine, "connect")
+    def set_sqlite_pragma(dbapi_connection, connection_record):
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA journal_mode=WAL")
+        cursor.execute("PRAGMA synchronous=NORMAL")
+        cursor.execute("PRAGMA busy_timeout=5000")
+        cursor.close()
+
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 class Base(DeclarativeBase):
     pass
-
-from typing import Optional
 
 class ErrorLog(Base):
     __tablename__ = "error_logs"
@@ -26,9 +38,11 @@ class RunsMetadata(Base):
     __tablename__ = "runs_metadata"
     
     id: Mapped[int] = mapped_column(primary_key=True)
-    run_name: Mapped[str] = mapped_column(unique=True)
+    run_name: Mapped[str] = mapped_column(unique=True, index=True)
     start_time: Mapped[datetime] = mapped_column(default=datetime.utcnow)
+    end_time: Mapped[Optional[datetime]] = mapped_column(nullable=True, default=None)
     status: Mapped[str] = mapped_column(default="active")
+    description: Mapped[Optional[str]] = mapped_column(nullable=True, default="")
     
     # Last Known Configuration (for resuming after power cycle / restart)
     last_sp_feed_pre: Mapped[float] = mapped_column(default=0.0)
@@ -45,6 +59,7 @@ class RunsMetadata(Base):
 
 class LogMixin:
     # A mixin to share columns between 1s, 1m, and 10m tables
+    run_id: Mapped[int] = mapped_column(default=1, index=True)
     timestamp: Mapped[datetime] = mapped_column(default=datetime.utcnow, index=True)
     uptime: Mapped[float] = mapped_column()
     
@@ -94,6 +109,8 @@ def init_db():
             res = conn.execute(text("PRAGMA table_info(runs_metadata)"))
             existing_cols = {row[1] for row in res.fetchall()}
             new_cols = {
+                "end_time": "DATETIME",
+                "description": "TEXT DEFAULT ''",
                 "last_sp_feed_pre": "REAL DEFAULT 0.0",
                 "last_sp_liq_reac": "REAL DEFAULT 0.0",
                 "last_sp_gas_reac": "REAL DEFAULT 0.0",
@@ -108,6 +125,13 @@ def init_db():
             for col_name, col_type in new_cols.items():
                 if col_name not in existing_cols:
                     conn.execute(text(f"ALTER TABLE runs_metadata ADD COLUMN {col_name} {col_type}"))
+
+            for table_name in ["logs_1s", "logs_1m", "logs_10m"]:
+                r = conn.execute(text(f"PRAGMA table_info({table_name})"))
+                t_cols = {row[1] for row in r.fetchall()}
+                if "run_id" not in t_cols:
+                    conn.execute(text(f"ALTER TABLE {table_name} ADD COLUMN run_id INTEGER DEFAULT 1"))
+                    conn.execute(text(f"CREATE INDEX IF NOT EXISTS idx_{table_name}_run_ts ON {table_name}(run_id, timestamp)"))
             conn.commit()
         except Exception:
             pass

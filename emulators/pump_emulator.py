@@ -81,6 +81,8 @@ async def handle_client(reader, writer):
                     state_changed = True
                 except Exception as e:
                     response = f"ERR:INVALID_SPEED: {decoded}\n"
+            elif decoded in ["<PING>", "<HEARTBEAT>"]:
+                response = "OK:PONG\n"
             else:
                 response = f"ERR:UNKNOWN_CMD: {decoded}\n"
                 

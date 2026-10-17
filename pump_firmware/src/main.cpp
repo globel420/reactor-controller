@@ -13,10 +13,14 @@ String inputString = "";         // A String to hold incoming data
 
 long targetSpeed = 0;
 bool isRunning = false;
+unsigned long lastPumpHeartbeat = 0;
+const unsigned long PUMP_HEARTBEAT_TIMEOUT = 5000;
 
 void parseCommand(String cmd) {
   cmd.trim();
   if (cmd.length() == 0) return;
+
+  lastPumpHeartbeat = millis();
 
   if (cmd.startsWith("<START>")) {
     isRunning = true;
@@ -25,6 +29,9 @@ void parseCommand(String cmd) {
   else if (cmd.startsWith("<STOP>")) {
     isRunning = false;
     Serial.println("OK:STOP");
+  }
+  else if (cmd.startsWith("<PING>") || cmd.startsWith("<HEARTBEAT>")) {
+    Serial.println("OK:PONG");
   }
   else if (cmd.startsWith("<DIR:")) {
     String dirStr = cmd.substring(5, cmd.indexOf('>'));
@@ -66,6 +73,7 @@ void setup() {
   // Configure Stepper parameters
   stepper.setMaxSpeed(4000.0);
   
+  lastPumpHeartbeat = millis();
   Serial.println("Pump Controller Ready");
 }
 
@@ -79,6 +87,13 @@ void loop() {
     } else {
       inputString += inChar;
     }
+  }
+
+  // Safety Watchdog
+  if (isRunning && (millis() - lastPumpHeartbeat > PUMP_HEARTBEAT_TIMEOUT)) {
+    isRunning = false;
+    targetSpeed = 0;
+    Serial.println("ERR:WATCHDOG_HEARTBEAT_TIMEOUT");
   }
 
   // Apply State

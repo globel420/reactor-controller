@@ -73,11 +73,16 @@ class Orchestrator:
         self.active_db_errors = {}
         self.warmup_stable_start = None
         
+        self.active_run_id = 1
+        self.active_run_name = "Run 1"
+
         # Connect Motor Override Callback
         motor_controller.override_callback = self.handle_manual_override
         self.auto_task = None
         self.poll_task = None
         self.heartbeat_task = None
+        self.r1m_task = None
+        self.r10m_task = None
 
     def load_alarm_config(self):
         defaults = {
@@ -149,6 +154,24 @@ class Orchestrator:
     async def start(self):
         # Initialize DB
         init_db()
+        from .database import RunsMetadata
+        try:
+            with SessionLocal() as db:
+                active_run = db.query(RunsMetadata).filter(RunsMetadata.status == "active").order_by(RunsMetadata.id.desc()).first()
+                if not active_run:
+                    active_run = db.query(RunsMetadata).order_by(RunsMetadata.id.desc()).first()
+                if active_run:
+                    self.active_run_id = active_run.id
+                    self.active_run_name = active_run.run_name
+                else:
+                    initial_run = RunsMetadata(run_name="Run 1", status="active")
+                    db.add(initial_run)
+                    db.commit()
+                    db.refresh(initial_run)
+                    self.active_run_id = initial_run.id
+                    self.active_run_name = initial_run.run_name
+        except Exception as e:
+            logger.warning(f"Could not load active run from DB: {e}")
         
         # Connect Serial to Arduino
         serial_link.set_telemetry_callback(self.handle_telemetry)
@@ -161,6 +184,17 @@ class Orchestrator:
         self.r1m_task = asyncio.create_task(self.rollup_1m_loop())
         self.r10m_task = asyncio.create_task(self.rollup_10m_loop())
         self.heartbeat_task = asyncio.create_task(self.heartbeat_loop())
+
+    async def stop(self):
+        logger.info("Stopping orchestrator and shutting down background tasks...")
+        for task in [self.poll_task, self.auto_task, self.r1m_task, self.r10m_task, self.heartbeat_task]:
+            if task and not task.done():
+                task.cancel()
+        if self.buzzer_relay:
+            self.buzzer_relay.off()
+        if hasattr(serial_link, "disconnect"):
+            await serial_link.disconnect()
+        logger.info("Orchestrator stopped cleanly.")
 
     async def handle_telemetry(self, data: dict):
         try:
@@ -451,7 +485,7 @@ class Orchestrator:
                 # State 1 = WARMUP, State 2 = WORKING
                 if state in [1, 2]:
                     with SessionLocal() as db:
-                        create_log(db, data, uptime, state)
+                        create_log(db, data, uptime, state, run_id=self.active_run_id)
             except Exception as e:
                 logger.error(f"DB Log Error: {e}")
 
@@ -524,7 +558,8 @@ class Orchestrator:
                 with SessionLocal() as db:
                     from .crud import perform_1m_rollup, prune_expired_logs
                     perform_1m_rollup(db)
-                    prune_expired_logs(db, raw_retention_hours=1.5, rollup_1m_retention_hours=8.0)
+                    if settings.RETENTION_RAW_HOURS > 0 or settings.RETENTION_1M_HOURS > 0:
+                        prune_expired_logs(db, raw_retention_hours=settings.RETENTION_RAW_HOURS, rollup_1m_retention_hours=settings.RETENTION_1M_HOURS)
             except Exception as e:
                 logger.error(f"1m Rollup / Prune Error: {e}")
 
@@ -582,7 +617,8 @@ class Orchestrator:
                 with SessionLocal() as db:
                     from .crud import perform_10m_rollup, prune_expired_logs
                     perform_10m_rollup(db)
-                    prune_expired_logs(db, raw_retention_hours=1.5, rollup_1m_retention_hours=8.0)
+                    if settings.RETENTION_RAW_HOURS > 0 or settings.RETENTION_1M_HOURS > 0:
+                        prune_expired_logs(db, raw_retention_hours=settings.RETENTION_RAW_HOURS, rollup_1m_retention_hours=settings.RETENTION_1M_HOURS)
             except Exception as e:
                 logger.error(f"10m Rollup / Prune Error: {e}")
 

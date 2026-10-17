@@ -5,26 +5,50 @@ services:
     build:
       context: .
       dockerfile: supervisory/Dockerfile
+    container_name: reactor_supervisory
     ports:
       - "8000:8000"
     environment:
-      - APP_ENV=development
+      - APP_ENV=${APP_ENV:-development}
+      - DATABASE_URL=sqlite:///./reactor_logs.db
+      - SERIAL_PORT=${SERIAL_PORT:-socket://sensor_emulator:9999}
+      - PUMP_PORT=${PUMP_PORT:-socket://pump_emulator:9998}
     volumes:
       - ./reactor_logs.db:/app/reactor_logs.db
+    restart: unless-stopped
     depends_on:
       - sensor_emulator
       - pump_emulator
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: reactor_grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ALLOW_EMBEDDING=true
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
+      - GF_INSTALL_PLUGINS=fr-ser-sqlite-datasource
+    volumes:
+      - ./reactor_logs.db:/data/reactor.db:ro
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+    restart: unless-stopped
+    depends_on:
+      - supervisory
 
   sensor_emulator:
     build:
       context: .
       dockerfile: emulators/Dockerfile
+    container_name: reactor_sensor_emulator
     command: python sensor_emulator.py
     ports:
       - "9999:9999"
     environment:
       - PUMP_EMULATOR_HOST=pump_emulator
       - PUMP_EMULATOR_PORT=9998
+    restart: unless-stopped
     depends_on:
       - pump_emulator
 
@@ -32,6 +56,8 @@ services:
     build:
       context: .
       dockerfile: emulators/Dockerfile
+    container_name: reactor_pump_emulator
     command: python pump_emulator.py
     ports:
       - "9998:9998"
+    restart: unless-stopped
