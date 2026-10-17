@@ -24,5 +24,10 @@ class Settings:
     RETENTION_RAW_HOURS: float = float(os.getenv("RETENTION_RAW_HOURS", "0"))
     RETENTION_1M_HOURS: float = float(os.getenv("RETENTION_1M_HOURS", "0"))
     
+    # Rated heater powers (Watts) for cumulative energy consumption calculation
+    POWER_RATED_FEED_PRE: float = float(os.getenv("POWER_RATED_FEED_PRE", "1000.0"))
+    POWER_RATED_LIQ_REAC: float = float(os.getenv("POWER_RATED_LIQ_REAC", "1500.0"))
+    POWER_RATED_GAS_REAC: float = float(os.getenv("POWER_RATED_GAS_REAC", "1200.0"))
+    
 settings = Settings()
 

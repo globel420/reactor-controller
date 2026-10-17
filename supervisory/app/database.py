@@ -96,6 +96,13 @@ class LogMixin:
     sp_liq_reac: Mapped[float] = mapped_column()
     sp_gas_reac: Mapped[float] = mapped_column()
 
+    # Process Analytics & Derived Metrics
+    ramp_feed_pre: Mapped[Optional[float]] = mapped_column(default=0.0, nullable=True)      # °C/min
+    ramp_liq_reac: Mapped[Optional[float]] = mapped_column(default=0.0, nullable=True)      # °C/min
+    ramp_gas_reac: Mapped[Optional[float]] = mapped_column(default=0.0, nullable=True)      # °C/min
+    dosing_rate_g_min: Mapped[Optional[float]] = mapped_column(default=0.0, nullable=True)  # g/min mass flow rate
+    energy_kwh: Mapped[Optional[float]] = mapped_column(default=0.0, nullable=True)         # Cumulative electrical kWh
+
 class Logs1s(Base, LogMixin):
     __tablename__ = "logs_1s"
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -132,12 +139,23 @@ def init_db():
                 if col_name not in existing_cols:
                     conn.execute(text(f"ALTER TABLE runs_metadata ADD COLUMN {col_name} {col_type}"))
 
+            analytics_cols = {
+                "ramp_feed_pre": "REAL DEFAULT 0.0",
+                "ramp_liq_reac": "REAL DEFAULT 0.0",
+                "ramp_gas_reac": "REAL DEFAULT 0.0",
+                "dosing_rate_g_min": "REAL DEFAULT 0.0",
+                "energy_kwh": "REAL DEFAULT 0.0",
+            }
+
             for table_name in ["logs_1s", "logs_1m", "logs_10m"]:
                 r = conn.execute(text(f"PRAGMA table_info({table_name})"))
                 t_cols = {row[1] for row in r.fetchall()}
                 if "run_id" not in t_cols:
                     conn.execute(text(f"ALTER TABLE {table_name} ADD COLUMN run_id INTEGER DEFAULT 1"))
                     conn.execute(text(f"CREATE INDEX IF NOT EXISTS idx_{table_name}_run_ts ON {table_name}(run_id, timestamp)"))
+                for col_name, col_type in analytics_cols.items():
+                    if col_name not in t_cols:
+                        conn.execute(text(f"ALTER TABLE {table_name} ADD COLUMN {col_name} {col_type}"))
             conn.commit()
         except Exception:
             pass

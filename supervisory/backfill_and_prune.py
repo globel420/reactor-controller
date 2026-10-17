@@ -67,13 +67,15 @@ def run_backfill_and_prune(db_path: str, raw_retention_hours: float = 1.5, rollu
                 run_id, timestamp, uptime, control_state, temp_feed_res, temp_feed_pre, temp_liq_reac,
                 temp_gas_reac_int, temp_gas_reac_ext, h2_ppm, weight, pump_speed,
                 heater_feed_pre, heater_liq_reac, heater_gas_reac,
-                sp_feed_pre, sp_liq_reac, sp_gas_reac
+                sp_feed_pre, sp_liq_reac, sp_gas_reac,
+                ramp_feed_pre, ramp_liq_reac, ramp_gas_reac, dosing_rate_g_min, energy_kwh
             )
             SELECT 
                 COALESCE(MAX(run_id), 1), MAX(timestamp), AVG(uptime), MAX(control_state), AVG(temp_feed_res), AVG(temp_feed_pre), AVG(temp_liq_reac),
                 AVG(temp_gas_reac_int), AVG(temp_gas_reac_ext), AVG(h2_ppm), AVG(weight), AVG(pump_speed),
                 AVG(heater_feed_pre), AVG(heater_liq_reac), AVG(heater_gas_reac),
-                AVG(sp_feed_pre), AVG(sp_liq_reac), AVG(sp_gas_reac)
+                AVG(sp_feed_pre), AVG(sp_liq_reac), AVG(sp_gas_reac),
+                AVG(ramp_feed_pre), AVG(ramp_liq_reac), AVG(ramp_gas_reac), AVG(dosing_rate_g_min), MAX(energy_kwh)
             FROM logs_1s
             GROUP BY strftime('%Y-%m-%d %H:%M:00', timestamp)
             HAVING MAX(timestamp) IS NOT NULL
@@ -92,13 +94,15 @@ def run_backfill_and_prune(db_path: str, raw_retention_hours: float = 1.5, rollu
                 run_id, timestamp, uptime, control_state, temp_feed_res, temp_feed_pre, temp_liq_reac,
                 temp_gas_reac_int, temp_gas_reac_ext, h2_ppm, weight, pump_speed,
                 heater_feed_pre, heater_liq_reac, heater_gas_reac,
-                sp_feed_pre, sp_liq_reac, sp_gas_reac
+                sp_feed_pre, sp_liq_reac, sp_gas_reac,
+                ramp_feed_pre, ramp_liq_reac, ramp_gas_reac, dosing_rate_g_min, energy_kwh
             )
             SELECT 
                 COALESCE(MAX(run_id), 1), MAX(timestamp), AVG(uptime), MAX(control_state), AVG(temp_feed_res), AVG(temp_feed_pre), AVG(temp_liq_reac),
                 AVG(temp_gas_reac_int), AVG(temp_gas_reac_ext), AVG(h2_ppm), AVG(weight), AVG(pump_speed),
                 AVG(heater_feed_pre), AVG(heater_liq_reac), AVG(heater_gas_reac),
-                AVG(sp_feed_pre), AVG(sp_liq_reac), AVG(sp_gas_reac)
+                AVG(sp_feed_pre), AVG(sp_liq_reac), AVG(sp_gas_reac),
+                AVG(ramp_feed_pre), AVG(ramp_liq_reac), AVG(ramp_gas_reac), AVG(dosing_rate_g_min), MAX(energy_kwh)
             FROM logs_1m
             GROUP BY (strftime('%s', timestamp) / 600)
             HAVING MAX(timestamp) IS NOT NULL

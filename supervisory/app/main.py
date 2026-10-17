@@ -7,10 +7,11 @@ from .orchestrator import orchestrator
 from .database import engine, Base, get_db, RunsMetadata, Logs1s, Logs1m, Logs10m, ErrorLog
 from sqlalchemy.orm import Session
 from fastapi import Depends
-from .crud import get_history_downsampled, get_error_logs
+from .crud import get_history_downsampled, get_error_logs, get_run_analytics_summary
 from fastapi.responses import StreamingResponse
 import io
 import csv
+import time
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -157,8 +158,31 @@ async def start_new_run(run_name: str, description: str = "", db: Session = Depe
     orchestrator.active_run_id = new_run.id
     orchestrator.active_run_name = new_run.run_name
     orchestrator.live_buffer.clear()
+    orchestrator.cumulative_energy_kwh = 0.0
+    orchestrator.last_energy_calc_time = time.time()
     
     return {"status": "ok", "run_id": new_run.id, "run_name": run_name}
+
+@app.get("/api/run/{run_id}/analytics")
+async def get_run_analytics(run_id: int, db: Session = Depends(get_db)):
+    summary = get_run_analytics_summary(db, run_id)
+    if not summary:
+        raise HTTPException(status_code=404, detail=f"Run {run_id} not found")
+    return summary
+
+@app.get("/api/run/analytics")
+async def get_current_run_analytics(run_id: Optional[int] = None, db: Session = Depends(get_db)):
+    target_id = run_id if run_id is not None else getattr(orchestrator, "active_run_id", None)
+    if not target_id:
+        latest = db.query(RunsMetadata).order_by(RunsMetadata.id.desc()).first()
+        if latest:
+            target_id = latest.id
+    if not target_id:
+        raise HTTPException(status_code=404, detail="No runs found")
+    summary = get_run_analytics_summary(db, target_id)
+    if not summary:
+        raise HTTPException(status_code=404, detail=f"Run {target_id} not found")
+    return summary
 
 @app.get("/api/run/export")
 async def export_run(run_id: Optional[int] = None, db: Session = Depends(get_db)):
@@ -176,7 +200,12 @@ async def export_run(run_id: Optional[int] = None, db: Session = Depends(get_db)
     writer = csv.writer(output)
     
     # Header
-    writer.writerow(["Timestamp", "Run_ID", "Uptime", "State", "Temp_Feed_Res", "Temp_Feed_Pre", "Temp_Liq_Reac", "Temp_Gas_Reac_Int", "Temp_Gas_Reac_Ext", "Weight", "Pump_Speed", "H2_ppm"])
+    writer.writerow([
+        "Timestamp", "Run_ID", "Uptime", "State",
+        "Temp_Feed_Res", "Temp_Feed_Pre", "Temp_Liq_Reac", "Temp_Gas_Reac_Int", "Temp_Gas_Reac_Ext",
+        "Weight", "Pump_Speed", "H2_ppm",
+        "Ramp_Feed_Pre", "Ramp_Liq_Reac", "Ramp_Gas_Reac", "Dosing_Rate_g_min", "Energy_kWh"
+    ])
     
     for log in logs:
         writer.writerow([
@@ -191,7 +220,12 @@ async def export_run(run_id: Optional[int] = None, db: Session = Depends(get_db)
             log.temp_gas_reac_ext,
             log.weight,
             log.pump_speed,
-            log.h2_ppm
+            log.h2_ppm,
+            getattr(log, "ramp_feed_pre", 0.0),
+            getattr(log, "ramp_liq_reac", 0.0),
+            getattr(log, "ramp_gas_reac", 0.0),
+            getattr(log, "dosing_rate_g_min", 0.0),
+            getattr(log, "energy_kwh", 0.0)
         ])
         
     output.seek(0)

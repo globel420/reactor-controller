@@ -24,6 +24,10 @@ class Orchestrator:
         self.ramps = {} # {zone: {target: float, rate_per_sec: float, last_update: float}}
         self.subscribers = set() # WebSocket queues
 
+        # Process Analytics State
+        self.cumulative_energy_kwh = 0.0
+        self.last_energy_calc_time = time.time()
+
         # Alarm State & Config Setup
         self.config_path = os.path.join(os.path.dirname(__file__), "alarm_config.json")
         self.alarm_config = self.load_alarm_config()
@@ -195,6 +199,79 @@ class Orchestrator:
         if hasattr(serial_link, "disconnect"):
             await serial_link.disconnect()
         logger.info("Orchestrator stopped cleanly.")
+
+    def compute_live_analytics(self, current_data: dict) -> dict:
+        now = time.time()
+        # Prefer delta from telemetry uptime if available and valid
+        dt_energy = 0.0
+        if self.live_buffer:
+            prev_uptime = float(self.live_buffer[-1].get("uptime", 0.0) or 0.0)
+            curr_uptime = float(current_data.get("uptime", 0.0) or 0.0)
+            if curr_uptime > prev_uptime and (curr_uptime - prev_uptime) <= 10.0:
+                dt_energy = curr_uptime - prev_uptime
+
+        if dt_energy <= 0.0:
+            dt_energy = max(0.0, min(10.0, now - self.last_energy_calc_time))
+        self.last_energy_calc_time = now
+
+        # Energy calculation
+        heaters = current_data.get("heaters", {})
+        duty_pre = float(heaters.get("feed_pre", 0.0) or 0.0) / 100.0
+        duty_liq = float(heaters.get("liq_reac", 0.0) or 0.0) / 100.0
+        duty_gas = float(heaters.get("gas_reac", 0.0) or 0.0) / 100.0
+
+        p_instant_w = (
+            duty_pre * settings.POWER_RATED_FEED_PRE +
+            duty_liq * settings.POWER_RATED_LIQ_REAC +
+            duty_gas * settings.POWER_RATED_GAS_REAC
+        )
+        delta_kwh = (p_instant_w * dt_energy) / 3600000.0
+        self.cumulative_energy_kwh += max(0.0, delta_kwh)
+
+        # Derivatives over recent moving window
+        ramp_feed_pre = 0.0
+        ramp_liq_reac = 0.0
+        ramp_gas_reac = 0.0
+        dosing_rate_g_min = 0.0
+
+        if len(self.live_buffer) >= 5:
+            # Look back up to 30 points (~30 seconds)
+            lookback_idx = max(0, len(self.live_buffer) - 30)
+            old_point = self.live_buffer[lookback_idx]
+            
+            uptime_now = float(current_data.get("uptime", 0.0) or 0.0)
+            uptime_old = float(old_point.get("uptime", 0.0) or 0.0)
+            dt_deriv = uptime_now - uptime_old
+
+            if dt_deriv >= 4.0:
+                s_now = current_data.get("sensors", {})
+                s_old = old_point.get("sensors", {})
+
+                t_pre_now = float(s_now.get("t_feed_pre") or 0.0)
+                t_pre_old = float(s_old.get("t_feed_pre") or 0.0)
+                ramp_feed_pre = ((t_pre_now - t_pre_old) / dt_deriv) * 60.0
+
+                t_liq_now = float(s_now.get("t_liq_reac") or 0.0)
+                t_liq_old = float(s_old.get("t_liq_reac") or 0.0)
+                ramp_liq_reac = ((t_liq_now - t_liq_old) / dt_deriv) * 60.0
+
+                t_gas_now = float(s_now.get("t_gas_reac_int") or 0.0)
+                t_gas_old = float(s_old.get("t_gas_reac_int") or 0.0)
+                ramp_gas_reac = ((t_gas_now - t_gas_old) / dt_deriv) * 60.0
+
+                w_now = float(s_now.get("weight") or 0.0)
+                w_old = float(s_old.get("weight") or 0.0)
+                # Dosing rate is mass depletion: (w_old - w_now) * 1000g / dt * 60s
+                dosing_rate_g_min = max(0.0, ((w_old - w_now) / dt_deriv) * 1000.0 * 60.0)
+
+        return {
+            "ramp_feed_pre": round(ramp_feed_pre, 2),
+            "ramp_liq_reac": round(ramp_liq_reac, 2),
+            "ramp_gas_reac": round(ramp_gas_reac, 2),
+            "dosing_rate_g_min": round(dosing_rate_g_min, 2),
+            "energy_kwh": round(self.cumulative_energy_kwh, 4),
+            "instant_power_watts": round(p_instant_w, 1)
+        }
 
     async def handle_telemetry(self, data: dict):
         try:
@@ -473,7 +550,10 @@ class Orchestrator:
             }
 
 
-            # 2. Update internal state
+            # 2. Compute Analytics & Derived Metrics
+            analytics = self.compute_live_analytics(data)
+            data["analytics"] = analytics
+
             self.latest_state = data
             self.live_buffer.append(data)
             
@@ -485,7 +565,7 @@ class Orchestrator:
                 # State 1 = WARMUP, State 2 = WORKING
                 if state in [1, 2]:
                     with SessionLocal() as db:
-                        create_log(db, data, uptime, state, run_id=self.active_run_id)
+                        create_log(db, data, uptime, state, run_id=self.active_run_id, analytics=analytics)
             except Exception as e:
                 logger.error(f"DB Log Error: {e}")
 

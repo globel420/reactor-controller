@@ -172,6 +172,134 @@
           "refId": "A"
         }
       ]
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 19 },
+      "id": 102,
+      "title": "Process Analytics & Mass Balance",
+      "type": "row"
+    },
+    {
+      "id": 5,
+      "title": "Thermal Ramp Rates (°C/min)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 10, "x": 0, "y": 20 },
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "Reactor-SQLite"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "showPoints": "never",
+            "spanNulls": true
+          },
+          "unit": "short"
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "Liquid Core Ramp" },
+            "properties": [{ "id": "color", "value": { "fixedColor": "#ef4444", "mode": "fixed" } }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Gas Headspace Ramp" },
+            "properties": [{ "id": "color", "value": { "fixedColor": "#f59e0b", "mode": "fixed" } }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Preheater Ramp" },
+            "properties": [{ "id": "color", "value": { "fixedColor": "#3b82f6", "mode": "fixed" } }]
+          }
+        ]
+      },
+      "targets": [
+        {
+          "queryType": "table",
+          "rawSql": "SELECT timestamp AS time, ramp_feed_pre AS \"Preheater Ramp\", ramp_liq_reac AS \"Liquid Core Ramp\", ramp_gas_reac AS \"Gas Headspace Ramp\" FROM logs_1s WHERE ('$run' = '$__all' OR run_id = '$run') ORDER BY timestamp ASC",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "Gravimetric Dosing Rate (g/min)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 8, "x": 10, "y": 20 },
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "Reactor-SQLite"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 15,
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "showPoints": "never",
+            "spanNulls": true
+          },
+          "unit": "short",
+          "color": { "fixedColor": "#10b981", "mode": "fixed" }
+        }
+      },
+      "targets": [
+        {
+          "queryType": "table",
+          "rawSql": "SELECT timestamp AS time, dosing_rate_g_min AS \"Dosing Rate (g/min)\" FROM logs_1s WHERE ('$run' = '$__all' OR run_id = '$run') ORDER BY timestamp ASC",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "title": "Cumulative Energy Consumed",
+      "type": "stat",
+      "gridPos": { "h": 8, "w": 6, "x": 18, "y": 20 },
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "Reactor-SQLite"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 5 },
+              { "color": "red", "value": 15 }
+            ]
+          },
+          "unit": "kwh"
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "queryType": "table",
+          "rawSql": "SELECT timestamp AS time, energy_kwh AS \"Energy (kWh)\" FROM logs_1s WHERE ('$run' = '$__all' OR run_id = '$run') ORDER BY timestamp ASC",
+          "refId": "A"
+        }
+      ]
     }
   ],
   "refresh": "5s",

@@ -1,4 +1,5 @@
 from sqlalchemy.orm import Session
+from sqlalchemy import text, func
 from .database import Logs1s, Logs1m, Logs10m, RunsMetadata, ErrorLog
 from datetime import datetime, timedelta
 from typing import Optional
@@ -51,7 +52,7 @@ def update_last_run_config(db: Session, sp: dict, pump: dict):
         if "auto_dir" in pump: run_meta.last_auto_dir = int(pump.get("auto_dir") or 0)
         db.commit()
 
-def create_log(db: Session, data: dict, uptime: float, state: int, run_id: int = 1):
+def create_log(db: Session, data: dict, uptime: float, state: int, run_id: int = 1, analytics: Optional[dict] = None):
     # Map dictionary keys (from JSON) to Model fields
     # JSON keys: t_gas, t_feed... -> Model: temp_gas, temp_feed...
     
@@ -60,6 +61,7 @@ def create_log(db: Session, data: dict, uptime: float, state: int, run_id: int =
     h = data.get("heaters", {})
     sp = data.get("sp", {})
     pump = data.get("pump", {})
+    a = analytics or data.get("analytics", {})
     
     db_log = Logs1s(
         run_id=run_id,
@@ -83,7 +85,13 @@ def create_log(db: Session, data: dict, uptime: float, state: int, run_id: int =
         sp_gas_reac=sp.get("gas_reac", 0.0),
         
         weight=s.get("weight", 0.0),
-        pump_speed=pump.get("speed", 0)
+        pump_speed=pump.get("speed", 0),
+
+        ramp_feed_pre=round(float(a.get("ramp_feed_pre", 0.0)), 2),
+        ramp_liq_reac=round(float(a.get("ramp_liq_reac", 0.0)), 2),
+        ramp_gas_reac=round(float(a.get("ramp_gas_reac", 0.0)), 2),
+        dosing_rate_g_min=round(float(a.get("dosing_rate_g_min", 0.0)), 2),
+        energy_kwh=round(float(a.get("energy_kwh", 0.0)), 4)
     )
     db.add(db_log)
     update_last_run_config(db, sp, pump)
@@ -152,6 +160,13 @@ def get_history_downsampled(db: Session, hours: float, max_points: int = 300, ru
                 "feed_pre": getattr(log, "sp_feed_pre", 0.0),
                 "liq_reac": getattr(log, "sp_liq_reac", 0.0),
                 "gas_reac": getattr(log, "sp_gas_reac", 0.0)
+            },
+            "analytics": {
+                "ramp_feed_pre": getattr(log, "ramp_feed_pre", 0.0),
+                "ramp_liq_reac": getattr(log, "ramp_liq_reac", 0.0),
+                "ramp_gas_reac": getattr(log, "ramp_gas_reac", 0.0),
+                "dosing_rate_g_min": getattr(log, "dosing_rate_g_min", 0.0),
+                "energy_kwh": getattr(log, "energy_kwh", 0.0)
             }
         })
     return result
@@ -164,13 +179,15 @@ def perform_1m_rollup(db: Session):
             run_id, timestamp, uptime, control_state, temp_feed_res, temp_feed_pre, temp_liq_reac,
             temp_gas_reac_int, temp_gas_reac_ext, h2_ppm, weight, pump_speed,
             heater_feed_pre, heater_liq_reac, heater_gas_reac,
-            sp_feed_pre, sp_liq_reac, sp_gas_reac
+            sp_feed_pre, sp_liq_reac, sp_gas_reac,
+            ramp_feed_pre, ramp_liq_reac, ramp_gas_reac, dosing_rate_g_min, energy_kwh
         )
         SELECT 
             COALESCE(MAX(run_id), 1), MAX(timestamp), AVG(uptime), MAX(control_state), AVG(temp_feed_res), AVG(temp_feed_pre), AVG(temp_liq_reac),
             AVG(temp_gas_reac_int), AVG(temp_gas_reac_ext), AVG(h2_ppm), AVG(weight), AVG(pump_speed),
             AVG(heater_feed_pre), AVG(heater_liq_reac), AVG(heater_gas_reac),
-            AVG(sp_feed_pre), AVG(sp_liq_reac), AVG(sp_gas_reac)
+            AVG(sp_feed_pre), AVG(sp_liq_reac), AVG(sp_gas_reac),
+            AVG(ramp_feed_pre), AVG(ramp_liq_reac), AVG(ramp_gas_reac), AVG(dosing_rate_g_min), MAX(energy_kwh)
         FROM logs_1s
         WHERE timestamp > COALESCE((SELECT MAX(timestamp) FROM logs_1m), datetime('now', '-2 minutes'))
         GROUP BY strftime('%Y-%m-%d %H:%M:00', timestamp)
@@ -185,13 +202,15 @@ def perform_10m_rollup(db: Session):
             run_id, timestamp, uptime, control_state, temp_feed_res, temp_feed_pre, temp_liq_reac,
             temp_gas_reac_int, temp_gas_reac_ext, h2_ppm, weight, pump_speed,
             heater_feed_pre, heater_liq_reac, heater_gas_reac,
-            sp_feed_pre, sp_liq_reac, sp_gas_reac
+            sp_feed_pre, sp_liq_reac, sp_gas_reac,
+            ramp_feed_pre, ramp_liq_reac, ramp_gas_reac, dosing_rate_g_min, energy_kwh
         )
         SELECT 
             COALESCE(MAX(run_id), 1), MAX(timestamp), AVG(uptime), MAX(control_state), AVG(temp_feed_res), AVG(temp_feed_pre), AVG(temp_liq_reac),
             AVG(temp_gas_reac_int), AVG(temp_gas_reac_ext), AVG(h2_ppm), AVG(weight), AVG(pump_speed),
             AVG(heater_feed_pre), AVG(heater_liq_reac), AVG(heater_gas_reac),
-            AVG(sp_feed_pre), AVG(sp_liq_reac), AVG(sp_gas_reac)
+            AVG(sp_feed_pre), AVG(sp_liq_reac), AVG(sp_gas_reac),
+            AVG(ramp_feed_pre), AVG(ramp_liq_reac), AVG(ramp_gas_reac), AVG(dosing_rate_g_min), MAX(energy_kwh)
         FROM logs_1m
         WHERE timestamp > COALESCE((SELECT MAX(timestamp) FROM logs_10m), datetime('now', '-20 minutes'))
         GROUP BY (strftime('%s', timestamp) / 600)
@@ -209,4 +228,92 @@ def prune_expired_logs(db: Session, raw_retention_hours: float = 0.0, rollup_1m_
         db.query(Logs1m).filter(Logs1m.timestamp < rollup_cutoff).delete()
     if raw_retention_hours > 0 or rollup_1m_retention_hours > 0:
         db.commit()
+
+def get_run_analytics_summary(db: Session, run_id: int):
+    run = db.query(RunsMetadata).filter(RunsMetadata.id == run_id).first()
+    if not run:
+        return None
+
+    end_ts = run.end_time or datetime.utcnow()
+    duration_secs = max(0.0, (end_ts - run.start_time).total_seconds())
+    hrs = int(duration_secs // 3600)
+    mins = int((duration_secs % 3600) // 60)
+    secs = int(duration_secs % 60)
+
+    # Aggregate over logs_1s for this run
+    q = db.query(
+        func.min(Logs1s.temp_feed_pre),
+        func.max(Logs1s.temp_feed_pre),
+        func.avg(Logs1s.temp_feed_pre),
+        func.max(Logs1s.ramp_feed_pre),
+        func.min(Logs1s.temp_liq_reac),
+        func.max(Logs1s.temp_liq_reac),
+        func.avg(Logs1s.temp_liq_reac),
+        func.max(Logs1s.ramp_liq_reac),
+        func.min(Logs1s.temp_gas_reac_int),
+        func.max(Logs1s.temp_gas_reac_int),
+        func.avg(Logs1s.temp_gas_reac_int),
+        func.max(Logs1s.ramp_gas_reac),
+        func.max(Logs1s.energy_kwh),
+        func.count(Logs1s.id)
+    ).filter(Logs1s.run_id == run_id).first()
+
+    first_log = db.query(Logs1s).filter(Logs1s.run_id == run_id).order_by(Logs1s.timestamp.asc()).first()
+    last_log = db.query(Logs1s).filter(Logs1s.run_id == run_id).order_by(Logs1s.timestamp.desc()).first()
+
+    initial_weight = first_log.weight if first_log else 0.0
+    final_weight = last_log.weight if last_log else 0.0
+    total_consumed_kg = max(0.0, initial_weight - final_weight)
+    avg_dosing_g_min = (total_consumed_kg * 1000.0 / (duration_secs / 60.0)) if duration_secs > 10 else 0.0
+
+    errors_count = db.query(ErrorLog).filter(
+        ErrorLog.timestamp >= run.start_time,
+        ErrorLog.timestamp <= end_ts
+    ).count()
+
+    total_kwh = float(q[12] or 0.0) if q else 0.0
+    avg_watts = (total_kwh * 1000.0 / (duration_secs / 3600.0)) if duration_secs > 10 else 0.0
+
+    return {
+        "run_id": run.id,
+        "run_name": run.run_name,
+        "status": run.status,
+        "description": run.description or "",
+        "start_time": run.start_time.isoformat() if run.start_time else None,
+        "end_time": run.end_time.isoformat() if run.end_time else None,
+        "duration_seconds": round(duration_secs, 1),
+        "duration_formatted": f"{hrs}h {mins}m {secs}s",
+        "total_records": q[13] if q else 0,
+        "thermal": {
+            "preheater": {
+                "min": round(float(q[0] or 0.0), 1) if q else 0.0,
+                "max": round(float(q[1] or 0.0), 1) if q else 0.0,
+                "avg": round(float(q[2] or 0.0), 1) if q else 0.0,
+                "max_ramp_rate": round(float(q[3] or 0.0), 2) if q else 0.0
+            },
+            "liquid_reactor": {
+                "min": round(float(q[4] or 0.0), 1) if q else 0.0,
+                "max": round(float(q[5] or 0.0), 1) if q else 0.0,
+                "avg": round(float(q[6] or 0.0), 1) if q else 0.0,
+                "max_ramp_rate": round(float(q[7] or 0.0), 2) if q else 0.0
+            },
+            "gas_reactor": {
+                "min": round(float(q[8] or 0.0), 1) if q else 0.0,
+                "max": round(float(q[9] or 0.0), 1) if q else 0.0,
+                "avg": round(float(q[10] or 0.0), 1) if q else 0.0,
+                "max_ramp_rate": round(float(q[11] or 0.0), 2) if q else 0.0
+            }
+        },
+        "gravimetric": {
+            "initial_weight_kg": round(initial_weight, 3),
+            "final_weight_kg": round(final_weight, 3),
+            "mass_consumed_kg": round(total_consumed_kg, 3),
+            "avg_dosing_rate_g_min": round(avg_dosing_g_min, 2)
+        },
+        "energy": {
+            "total_kwh": round(total_kwh, 4),
+            "avg_power_watts": round(avg_watts, 1)
+        },
+        "alarms_count": errors_count
+    }
 
