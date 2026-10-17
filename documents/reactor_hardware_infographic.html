@@ -30,17 +30,17 @@
           </p>
         </div>
 
-        <!-- Verification Counter Badge -->
+          <!-- Verification Counter Badge -->
         <div class="flex flex-col items-end justify-center bg-slate-950 border border-slate-800 rounded-xl p-4 min-w-[220px]">
           <div class="flex items-center justify-between w-full mb-1">
             <span class="text-xs font-medium text-slate-400">Verified Progress</span>
-            <span id="progress-percent" class="text-xs font-bold text-emerald-400">68%</span>
+            <span id="progress-percent" class="text-xs font-bold text-emerald-400">72%</span>
           </div>
           <div class="w-full bg-slate-800 rounded-full h-2.5 overflow-hidden mb-1">
-            <div id="progress-bar" class="bg-gradient-to-r from-blue-500 to-emerald-400 h-2.5 rounded-full transition-all duration-300" style="width: 68%"></div>
+            <div id="progress-bar" class="bg-gradient-to-r from-blue-500 to-emerald-400 h-2.5 rounded-full transition-all duration-300" style="width: 72%"></div>
           </div>
           <div class="flex justify-between w-full text-xs text-slate-400">
-            <span id="progress-count">19 of 28 Complete</span>
+            <span id="progress-count">23 of 32 Complete</span>
             <button onclick="resetAllChecks()" class="hover:underline text-xs text-blue-400 transition-colors">Reset</button>
           </div>
         </div>
@@ -48,11 +48,11 @@
 
       <!-- Quick Filter Pills -->
       <div class="flex flex-wrap gap-2 mt-5 pt-4 border-t border-slate-800">
-        <button onclick="filterCards('all')" class="filter-btn active px-3 py-1.5 rounded-lg text-xs font-medium bg-blue-600 text-white shadow-xs transition-colors" data-filter="all">All Systems (28)</button>
-        <button onclick="filterCards('wifi')" class="filter-btn px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-800 text-slate-300 hover:text-white transition-colors" data-filter="wifi">📶 Field Wi-Fi & Host (4/4)</button>
+        <button onclick="filterCards('all')" class="filter-btn active px-3 py-1.5 rounded-lg text-xs font-medium bg-blue-600 text-white shadow-xs transition-colors" data-filter="all">All Systems (32)</button>
+        <button onclick="filterCards('wifi')" class="filter-btn px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-800 text-slate-300 hover:text-white transition-colors" data-filter="wifi">📶 Field Wi-Fi & Host (6/6)</button>
         <button onclick="filterCards('telemetry')" class="filter-btn px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-800 text-slate-300 hover:text-white transition-colors" data-filter="telemetry">📊 Storage Pipeline (4/4)</button>
         <button onclick="filterCards('analytics')" class="filter-btn px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-800 text-slate-300 hover:text-white transition-colors" data-filter="analytics">⚡ Process Analytics (4/4)</button>
-        <button onclick="filterCards('grafana')" class="filter-btn px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-800 text-slate-300 hover:text-white transition-colors" data-filter="grafana">📈 Grafana Web (4/4)</button>
+        <button onclick="filterCards('grafana')" class="filter-btn px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-800 text-slate-300 hover:text-white transition-colors" data-filter="grafana">📈 Grafana Web (6/6)</button>
         <button onclick="filterCards('safety')" class="filter-btn px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-800 text-slate-300 hover:text-white transition-colors" data-filter="safety">🛡️ Safety Watchdogs (3/4)</button>
         <button onclick="filterCards('hardware')" class="filter-btn px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-800 text-slate-300 hover:text-white transition-colors" data-filter="hardware">🔌 Physical Hardware (0/8)</button>
       </div>
@@ -145,6 +145,32 @@
             </div>
             <p class="text-xs text-slate-400 mt-1">Dedicated Pi Settings modal in the web control panel: real-time Wi-Fi scanning with signal %, network join, host telemetry (CPU °C, RAM, Disk, DB size), Docker restart, and system reboot.</p>
             <div class="mt-2 font-mono text-xs text-slate-500">API Port 8001 ➔ Container Proxy</div>
+          </div>
+        </label>
+
+        <!-- Host Shell & GPIO Buzzer Test -->
+        <label class="group relative flex items-start gap-3.5 bg-slate-900 border border-emerald-500/40 rounded-xl p-4 cursor-pointer transition-all shadow-xs">
+          <input type="checkbox" id="item-host_shell" checked class="mt-1 h-4 w-4 rounded border-slate-700 text-emerald-500 focus:ring-emerald-400" onchange="updateProgress()">
+          <div class="flex-1">
+            <div class="flex items-center justify-between">
+              <span class="font-semibold text-sm text-emerald-300">Host Terminal & Hardware GPIO 26 Buzzer Test</span>
+              <span class="text-xs px-2 py-0.5 rounded-md bg-emerald-500/20 text-emerald-400 font-mono">pinctrl / GPIO 26</span>
+            </div>
+            <p class="text-xs text-slate-400 mt-1">Interactive shell console inside Pi Settings modal with quick-action buttons: 1.5s buzzer pulse test, tailscale status, and docker inspection across Pi 4 & Pi 5.</p>
+            <div class="mt-2 font-mono text-xs text-slate-500">POST /api/system/exec • /usr/bin/pinctrl</div>
+          </div>
+        </label>
+
+        <!-- In-Browser User Password Management -->
+        <label class="group relative flex items-start gap-3.5 bg-slate-900 border border-emerald-500/40 rounded-xl p-4 cursor-pointer transition-all shadow-xs">
+          <input type="checkbox" id="item-host_password" checked class="mt-1 h-4 w-4 rounded border-slate-700 text-emerald-500 focus:ring-emerald-400" onchange="updateProgress()">
+          <div class="flex-1">
+            <div class="flex items-center justify-between">
+              <span class="font-semibold text-sm text-emerald-300">In-Browser Host Password Management</span>
+              <span class="text-xs px-2 py-0.5 rounded-md bg-emerald-500/20 text-emerald-400 font-mono">/usr/sbin/chpasswd</span>
+            </div>
+            <p class="text-xs text-slate-400 mt-1">Dedicated web card in Pi Settings to safely update the host "pi" user password with verification checks and show/hide toggles without needing SSH.</p>
+            <div class="mt-2 font-mono text-xs text-slate-500">POST /api/system/password • Sanitized Auth</div>
           </div>
         </label>
       </div>
@@ -333,7 +359,33 @@
               <span class="text-xs px-2 py-0.5 rounded-md bg-blue-500/20 text-blue-400 font-mono">reactor-telemetry</span>
             </div>
             <p class="text-xs text-slate-400 mt-1">Thermal ramp curves (°C/min), dosing rate (g/min), cumulative energy stat sparkline (kWh), duty cycles (%), and raw temps.</p>
-            <div class="mt-2 text-xs text-slate-500 font-mono">Auto-refreshes every 5s • 7 live panels</div>
+            <div class="mt-2 text-xs text-slate-500 font-mono">Auto-refreshes every 5s • 10 live panels</div>
+          </div>
+        </label>
+
+        <!-- Reactor SCADA Command Center -->
+        <label class="group relative flex items-start gap-3.5 bg-slate-900 border border-blue-500/40 rounded-xl p-4 cursor-pointer transition-all shadow-xs">
+          <input type="checkbox" id="item-scada_dashboard" checked class="mt-1 h-4 w-4 rounded border-slate-700 text-blue-500 focus:ring-blue-400" onchange="updateProgress()">
+          <div class="flex-1">
+            <div class="flex items-center justify-between">
+              <span class="font-semibold text-sm text-blue-300">Reactor SCADA Command Center (Operator Console)</span>
+              <span class="text-xs px-2 py-0.5 rounded-md bg-blue-500/20 text-blue-400 font-mono">reactor-operator-scada</span>
+            </div>
+            <p class="text-xs text-slate-400 mt-1">12-panel high-density industrial dark SCADA theme: State KPI badge, 5 thermal waveforms with gradient fills, limits bar gauges, PWM duty cycles, MQ-8 PPM, and alarm history.</p>
+            <div class="mt-2 text-xs text-slate-500 font-mono">frser-sqlite queryText • 1s live refresh</div>
+          </div>
+        </label>
+
+        <!-- In-App View Switcher -->
+        <label class="group relative flex items-start gap-3.5 bg-slate-900 border border-blue-500/40 rounded-xl p-4 cursor-pointer transition-all shadow-xs">
+          <input type="checkbox" id="item-inapp_switcher" checked class="mt-1 h-4 w-4 rounded border-slate-700 text-blue-500 focus:ring-blue-400" onchange="updateProgress()">
+          <div class="flex-1">
+            <div class="flex items-center justify-between">
+              <span class="font-semibold text-sm text-blue-300">In-App View Switcher (Controls & SCADA)</span>
+              <span class="text-xs px-2 py-0.5 rounded-md bg-blue-500/20 text-blue-400 font-mono">Port 8000 Switcher</span>
+            </div>
+            <p class="text-xs text-slate-400 mt-1">Seamless 1-click header switcher between active physical reactor controls and embedded full-height Grafana SCADA with standalone tab launcher.</p>
+            <div class="mt-2 text-xs text-emerald-400 font-medium">🎛️ Controls ⟷ 📊 SCADA Analytics</div>
           </div>
         </label>
       </div>
@@ -513,11 +565,13 @@
 
   <script>
     const ITEM_IDS = [
-      // Field Wi-Fi & Host Manager (4)
+      // Field Wi-Fi & Host Manager (6)
       'item-wifi_hotspot',
       'item-boot_failover',
       'item-safe_reconnect',
       'item-pi_settings_modal',
+      'item-host_shell',
+      'item-host_password',
       // Section 1: Storage Pipeline (4)
       'item-sqlite_wal',
       'item-run_partitioning',
@@ -528,11 +582,13 @@
       'item-dosing_rate',
       'item-energy_tracking',
       'item-analytics_api',
-      // Section 3: Grafana & Web (4)
+      // Section 3: Grafana & Web (6)
       'item-grafana_app',
       'item-sqlite_datasource',
       'item-run_selector',
       'item-panels_cluster',
+      'item-scada_dashboard',
+      'item-inapp_switcher',
       // Section 4: Safety & Watchdogs (4)
       'item-mega_watchdog',
       'item-uno_watchdog',
