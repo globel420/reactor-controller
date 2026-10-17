@@ -1,0 +1,502 @@
+{
+  "annotations": {
+    "list": []
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 2,
+  "id": null,
+  "links": [
+    {
+      "asDropdown": false,
+      "icon": "dashboard",
+      "includeVars": true,
+      "keepTime": true,
+      "tags": [],
+      "targetBlank": false,
+      "title": "Switch to Detailed Analytics",
+      "type": "link",
+      "url": "/d/reactor-telemetry"
+    }
+  ],
+  "liveNow": true,
+  "panels": [
+    {
+      "id": 1,
+      "title": "Reactor State",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 0 },
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "Reactor-SQLite"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [
+            {
+              "options": {
+                "STANDBY": { "color": "yellow", "text": "STANDBY" },
+                "HEATING": { "color": "orange", "text": "HEATING" },
+                "HOLD": { "color": "green", "text": "HOLD" },
+                "PURGE": { "color": "blue", "text": "PURGE" },
+                "FAULT": { "color": "red", "text": "FAULT" },
+                "EMERGENCY_STOP": { "color": "dark-red", "text": "E-STOP" }
+              },
+              "type": "value"
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{ "color": "blue", "value": null }]
+          }
+        }
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "queryType": "table",
+          "rawSql": "SELECT state AS \"State\" FROM logs_1s WHERE ('$run' = '$__all' OR run_id = '$run') ORDER BY timestamp DESC LIMIT 1",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Liquid Core",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 0 },
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "Reactor-SQLite"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "celsius",
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "#06b6d4", "value": null },
+              { "color": "#10b981", "value": 150 },
+              { "color": "#f59e0b", "value": 300 },
+              { "color": "#ef4444", "value": 450 }
+            ]
+          }
+        }
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "center"
+      },
+      "targets": [
+        {
+          "queryType": "table",
+          "rawSql": "SELECT timestamp AS time, temp_liq_reac AS \"Liquid\" FROM logs_1s WHERE ('$run' = '$__all' OR run_id = '$run') ORDER BY timestamp ASC",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Gas Headspace",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 0 },
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "Reactor-SQLite"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "celsius",
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "#8b5cf6", "value": null },
+              { "color": "#ec4899", "value": 250 },
+              { "color": "#ef4444", "value": 450 }
+            ]
+          }
+        }
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "center"
+      },
+      "targets": [
+        {
+          "queryType": "table",
+          "rawSql": "SELECT timestamp AS time, temp_gas_reac_int AS \"Gas Core\" FROM logs_1s WHERE ('$run' = '$__all' OR run_id = '$run') ORDER BY timestamp ASC",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Feed Preheater",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 0 },
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "Reactor-SQLite"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "celsius",
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "#3b82f6", "value": null },
+              { "color": "#10b981", "value": 150 },
+              { "color": "#f59e0b", "value": 250 }
+            ]
+          }
+        }
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "center"
+      },
+      "targets": [
+        {
+          "queryType": "table",
+          "rawSql": "SELECT timestamp AS time, temp_feed_pre AS \"Preheater\" FROM logs_1s WHERE ('$run' = '$__all' OR run_id = '$run') ORDER BY timestamp ASC",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Dosing Flow Rate",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 4, "x": 16, "y": 0 },
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "Reactor-SQLite"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "#64748b", "value": null },
+              { "color": "#06b6d4", "value": 0.1 },
+              { "color": "#10b981", "value": 5.0 }
+            ]
+          }
+        }
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "center"
+      },
+      "targets": [
+        {
+          "queryType": "table",
+          "rawSql": "SELECT timestamp AS time, ROUND(dosing_rate_g_min, 2) AS \"Flow (g/min)\" FROM logs_1s WHERE ('$run' = '$__all' OR run_id = '$run') ORDER BY timestamp ASC",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "Cumulative Energy",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 4, "x": 20, "y": 0 },
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "Reactor-SQLite"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "kwh",
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "#10b981", "value": null },
+              { "color": "#f59e0b", "value": 2.0 },
+              { "color": "#ef4444", "value": 5.0 }
+            ]
+          }
+        }
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "center"
+      },
+      "targets": [
+        {
+          "queryType": "table",
+          "rawSql": "SELECT timestamp AS time, cumulative_energy_kwh AS \"Energy (kWh)\" FROM logs_1s WHERE ('$run' = '$__all' OR run_id = '$run') ORDER BY timestamp ASC",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "title": "Thermal Zones — High-Contrast Waveforms",
+      "type": "timeseries",
+      "gridPos": { "h": 10, "w": 16, "x": 0, "y": 4 },
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "Reactor-SQLite"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 15,
+            "gradientMode": "opacity",
+            "spanNulls": true
+          },
+          "unit": "celsius"
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "Liquid Core" },
+            "properties": [{ "id": "color", "value": { "fixedColor": "#ef4444", "mode": "fixed" } }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Gas Core" },
+            "properties": [{ "id": "color", "value": { "fixedColor": "#f59e0b", "mode": "fixed" } }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Preheater" },
+            "properties": [{ "id": "color", "value": { "fixedColor": "#06b6d4", "mode": "fixed" } }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Gas Skin" },
+            "properties": [{ "id": "color", "value": { "fixedColor": "#8b5cf6", "mode": "fixed" } }]
+          }
+        ]
+      },
+      "targets": [
+        {
+          "queryType": "table",
+          "rawSql": "SELECT timestamp AS time, temp_liq_reac AS \"Liquid Core\", temp_gas_reac_int AS \"Gas Core\", temp_feed_pre AS \"Preheater\", temp_gas_reac_ext AS \"Gas Skin\" FROM logs_1s WHERE ('$run' = '$__all' OR run_id = '$run') ORDER BY timestamp ASC",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "title": "Zone Temperatures vs Operational Limits",
+      "type": "bargauge",
+      "gridPos": { "h": 10, "w": 8, "x": 16, "y": 4 },
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "Reactor-SQLite"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "max": 550,
+          "unit": "celsius",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "#06b6d4", "value": null },
+              { "color": "#10b981", "value": 150 },
+              { "color": "#f59e0b", "value": 300 },
+              { "color": "#ef4444", "value": 450 }
+            ]
+          }
+        }
+      },
+      "options": {
+        "displayMode": "gradient",
+        "orientation": "horizontal",
+        "showUnfilled": true
+      },
+      "targets": [
+        {
+          "queryType": "table",
+          "rawSql": "SELECT temp_liq_reac AS \"Liquid Core\", temp_gas_reac_int AS \"Gas Headspace\", temp_feed_pre AS \"Preheater\", temp_gas_reac_ext AS \"Gas Skin\", temp_feed_res AS \"Feed Tank\" FROM logs_1s WHERE ('$run' = '$__all' OR run_id = '$run') ORDER BY timestamp DESC LIMIT 1",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "title": "Feedstock Tank Mass & Depletion (kg)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 14 },
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "Reactor-SQLite"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 20,
+            "gradientMode": "opacity"
+          },
+          "unit": "masskg",
+          "color": { "mode": "fixed", "fixedColor": "#10b981" }
+        }
+      },
+      "targets": [
+        {
+          "queryType": "table",
+          "rawSql": "SELECT timestamp AS time, weight_kg AS \"Tank Weight\" FROM logs_1s WHERE ('$run' = '$__all' OR run_id = '$run') ORDER BY timestamp ASC",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "title": "Heater PWM Duty Cycles (%)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 14 },
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "Reactor-SQLite"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "max": 100,
+          "unit": "percent",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1.5,
+            "fillOpacity": 10
+          }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "Preheater PWM" },
+            "properties": [{ "id": "color", "value": { "fixedColor": "#06b6d4", "mode": "fixed" } }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Liquid Core PWM" },
+            "properties": [{ "id": "color", "value": { "fixedColor": "#ef4444", "mode": "fixed" } }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Gas Core PWM" },
+            "properties": [{ "id": "color", "value": { "fixedColor": "#f59e0b", "mode": "fixed" } }]
+          }
+        ]
+      },
+      "targets": [
+        {
+          "queryType": "table",
+          "rawSql": "SELECT timestamp AS time, ROUND(pwm_feed_pre * 100.0 / 255.0, 1) AS \"Preheater PWM\", ROUND(pwm_liq_reac * 100.0 / 255.0, 1) AS \"Liquid Core PWM\", ROUND(pwm_gas_reac * 100.0 / 255.0, 1) AS \"Gas Core PWM\" FROM logs_1s WHERE ('$run' = '$__all' OR run_id = '$run') ORDER BY timestamp ASC",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "title": "Hydrogen Safety Level (MQ-8 PPM)",
+      "type": "gauge",
+      "gridPos": { "h": 7, "w": 8, "x": 0, "y": 22 },
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "Reactor-SQLite"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "max": 1000,
+          "unit": "ppm",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "#10b981", "value": null },
+              { "color": "#f59e0b", "value": 200 },
+              { "color": "#ef4444", "value": 500 }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "queryType": "table",
+          "rawSql": "SELECT h2_ppm AS \"H2 Concentration\" FROM logs_1s WHERE ('$run' = '$__all' OR run_id = '$run') ORDER BY timestamp DESC LIMIT 1",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "title": "Recent Alarm Log",
+      "type": "table",
+      "gridPos": { "h": 7, "w": 16, "x": 8, "y": 22 },
+      "datasource": {
+        "type": "frser-sqlite-datasource",
+        "uid": "Reactor-SQLite"
+      },
+      "fieldConfig": {
+        "defaults": {}
+      },
+      "targets": [
+        {
+          "queryType": "table",
+          "rawSql": "SELECT timestamp AS \"Time\", zone AS \"Zone\", alarm_type AS \"Type\", ROUND(reading, 1) AS \"Reading\", target AS \"Target\", cleared_timestamp AS \"Cleared\" FROM alarms ORDER BY timestamp DESC LIMIT 20",
+          "refId": "A"
+        }
+      ]
+    }
+  ],
+  "refresh": "1s",
+  "schemaVersion": 38,
+  "style": "dark",
+  "tags": ["reactor", "scada", "operator"],
+  "templating": {
+    "list": [
+      {
+        "allValue": null,
+        "current": {
+          "selected": true,
+          "text": "All Runs",
+          "value": "$__all"
+        },
+        "datasource": {
+          "type": "frser-sqlite-datasource",
+          "uid": "Reactor-SQLite"
+        },
+        "definition": "SELECT id AS __value, run_name || ' (Run #' || id || ')' AS __text FROM runs_metadata ORDER BY id DESC",
+        "hide": 0,
+        "includeAll": true,
+        "label": "Run",
+        "multi": false,
+        "name": "run",
+        "options": [],
+        "query": "SELECT id AS __value, run_name || ' (Run #' || id || ')' AS __text FROM runs_metadata ORDER BY id DESC",
+        "refresh": 1,
+        "type": "query"
+      }
+    ]
+  },
+  "time": {
+    "from": "now-30m",
+    "to": "now"
+  },
+  "timepicker": {
+    "refresh_intervals": ["1s", "5s", "10s", "30s", "1m"]
+  },
+  "timezone": "browser",
+  "title": "Reactor SCADA Command Center (Operator Console)",
+  "uid": "reactor-operator-scada"
+}

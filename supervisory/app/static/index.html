@@ -139,6 +139,8 @@
             const [alarmMinimized, setAlarmMinimized] = useState(false);
             const [alarmDismissed, setAlarmDismissed] = useState(false);
             const [audioMuted, setAudioMuted] = useState(false);
+            const [activeView, setActiveView] = useState("controls"); // "controls" | "scada"
+            const [selectedDashboard, setSelectedDashboard] = useState("reactor-operator-scada");
             const prevAlarmCodesRef = useRef("");
             const timeRangeRef = useRef(timeRange);
 
@@ -261,14 +263,33 @@
             return (
                 <div className="min-h-screen p-4 flex flex-col gap-4">
                     {/* Header */}
-                    <header className="bg-gray-800 p-4 rounded-lg shadow-lg flex justify-between items-center border-b border-gray-700">
-                        <div className="flex items-center gap-3">
-                            <h1 className="text-2xl font-bold tracking-tight text-blue-400">Reactor Controller</h1>
-                            <span className={`px-2 py-0.5 rounded text-xs font-bold font-mono border ${isConnected ? 'bg-green-950 text-green-400 border-green-700' : 'bg-red-950 text-red-400 border-red-700 animate-pulse'}`}>
-                                {isConnected ? "CONNECTED" : (latest ? "HARDWARE OFFLINE" : "CONNECTING...")}
-                            </span>
+                    <header className="bg-gray-800 p-4 rounded-lg shadow-lg flex flex-col md:flex-row justify-between items-start md:items-center gap-3 border-b border-gray-700">
+                        <div className="flex flex-wrap items-center gap-4">
+                            <div className="flex items-center gap-3">
+                                <h1 className="text-2xl font-bold tracking-tight text-blue-400">Reactor Controller</h1>
+                                <span className={`px-2 py-0.5 rounded text-xs font-bold font-mono border ${isConnected ? 'bg-green-950 text-green-400 border-green-700' : 'bg-red-950 text-red-400 border-red-700 animate-pulse'}`}>
+                                    {isConnected ? "CONNECTED" : (latest ? "HARDWARE OFFLINE" : "CONNECTING...")}
+                                </span>
+                            </div>
+                            {/* View Switcher: Control Panel vs SCADA Analytics */}
+                            <div className="flex bg-gray-900 p-1 rounded-lg border border-gray-700">
+                                <button 
+                                    onClick={() => setActiveView("controls")}
+                                    className={`px-3 py-1 rounded text-xs font-bold transition-all flex items-center gap-1.5 ${activeView === 'controls' ? 'bg-blue-600 text-white shadow' : 'text-gray-400 hover:text-white'}`}
+                                >
+                                    <span>🎛️</span>
+                                    <span>Controls</span>
+                                </button>
+                                <button 
+                                    onClick={() => setActiveView("scada")}
+                                    className={`px-3 py-1 rounded text-xs font-bold transition-all flex items-center gap-1.5 ${activeView === 'scada' ? 'bg-purple-600 text-white shadow' : 'text-gray-400 hover:text-white'}`}
+                                >
+                                    <span>📊</span>
+                                    <span>SCADA Analytics</span>
+                                </button>
+                            </div>
                         </div>
-                        <div className="flex gap-4 items-center">
+                        <div className="flex flex-wrap gap-4 items-center">
                             {alarms.active && alarms.active.length > 0 && (
                                 <button 
                                     onClick={() => { setAlarmDismissed(false); setAlarmMinimized(false); }}
@@ -329,59 +350,111 @@
                     {/* System & Wi-Fi Settings Modal */}
                     {showSystemSettings && <SystemSettingsModal onClose={() => setShowSystemSettings(false)} />}
 
-                    {/* Controls */}
-                    <div className="flex gap-2 justify-center">
-                        <button onClick={() => sendState(0)} className={`px-6 py-2 rounded font-bold transition-all ${stateIdx === 0 ? 'bg-gray-600 ring-2 ring-white' : 'bg-gray-700 text-gray-400 hover:bg-gray-600'}`}>STANDBY</button>
-                        <button onClick={() => sendState(1)} className={`px-6 py-2 rounded font-bold transition-all ${stateIdx === 1 ? 'bg-yellow-600 ring-2 ring-white' : 'bg-yellow-800 text-yellow-200 hover:bg-yellow-700'}`}>WARMUP</button>
-                        <button onClick={() => sendState(2)} className={`px-6 py-2 rounded font-bold transition-all ${stateIdx === 2 ? 'bg-green-600 ring-2 ring-white' : 'bg-green-800 text-green-200 hover:bg-green-700'}`}>WORKING</button>
-                    </div>
+                    {/* Active View: SCADA Visualizer vs Control Panel */}
+                    {activeView === "scada" ? (
+                        <div className="flex flex-col gap-3">
+                            {/* Visualizer Toolbar */}
+                            <div className="bg-gray-800 p-3 rounded-xl border border-gray-700 flex flex-wrap justify-between items-center gap-3">
+                                <div className="flex items-center gap-3">
+                                    <span className="text-2xl">📊</span>
+                                    <div>
+                                        <h2 className="text-sm font-bold text-white flex items-center gap-2">
+                                            <span>Grafana Process Analytics</span>
+                                            <span className="text-[10px] bg-purple-950 text-purple-300 font-mono px-2 py-0.5 rounded border border-purple-800">Live SCADA</span>
+                                        </h2>
+                                        <p className="text-xs text-gray-400">High-contrast waveforms, thermal limits, and mass balance</p>
+                                    </div>
+                                </div>
 
-                    {/* Process Cards */}
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                        {/* Feedstock Pump */}
-                        <PumpCard pump={l.pump} />
+                                <div className="flex items-center gap-2.5">
+                                    <label className="text-xs text-gray-400 font-medium">Layout:</label>
+                                    <select 
+                                        value={selectedDashboard} 
+                                        onChange={e => setSelectedDashboard(e.target.value)}
+                                        className="bg-gray-900 border border-gray-600 rounded-lg px-3 py-1.5 text-xs text-white outline-none focus:border-purple-500 font-semibold cursor-pointer"
+                                    >
+                                        <option value="reactor-operator-scada">Operator Console (High-Contrast SCADA)</option>
+                                        <option value="reactor-telemetry">Detailed Telemetry & Engineering Analytics</option>
+                                    </select>
+                                    <a 
+                                        href={`http://${window.location.hostname}:3000/d/${selectedDashboard}?kiosk`} 
+                                        target="_blank" 
+                                        rel="noreferrer"
+                                        className="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 rounded-lg text-xs font-bold text-white transition-all shadow flex items-center gap-1.5"
+                                        title="Open in new standalone browser tab"
+                                    >
+                                        <span>↗</span>
+                                        <span>Full Tab</span>
+                                    </a>
+                                </div>
+                            </div>
 
-                        {/* Load Cell */}
-                        <LoadCellCard weight={s.weight} 
-                            onTare={() => fetch('/api/control/tare', { method: 'POST' })}
-                            onCalibrate={(w) => fetch(`/api/control/calibrate?value=${w}`, { method: 'POST' })} />
+                            {/* Embedded Grafana Frame */}
+                            <div className="w-full h-[78vh] rounded-xl overflow-hidden border border-gray-700 bg-gray-950 shadow-2xl relative">
+                                <iframe 
+                                    src={`http://${window.location.hostname}:3000/d/${selectedDashboard}?kiosk&theme=dark`} 
+                                    className="w-full h-full border-0"
+                                    title="Grafana Analytics Dashboard"
+                                />
+                            </div>
+                        </div>
+                    ) : (
+                        <>
+                            {/* Controls */}
+                            <div className="flex gap-2 justify-center">
+                                <button onClick={() => sendState(0)} className={`px-6 py-2 rounded font-bold transition-all ${stateIdx === 0 ? 'bg-gray-600 ring-2 ring-white' : 'bg-gray-700 text-gray-400 hover:bg-gray-600'}`}>STANDBY</button>
+                                <button onClick={() => sendState(1)} className={`px-6 py-2 rounded font-bold transition-all ${stateIdx === 1 ? 'bg-yellow-600 ring-2 ring-white' : 'bg-yellow-800 text-yellow-200 hover:bg-yellow-700'}`}>WARMUP</button>
+                                <button onClick={() => sendState(2)} className={`px-6 py-2 rounded font-bold transition-all ${stateIdx === 2 ? 'bg-green-600 ring-2 ring-white' : 'bg-green-800 text-green-200 hover:bg-green-700'}`}>WORKING</button>
+                            </div>
 
-                        {/* H2 Sensor */}
-                        <SensorCard title="H2 Sensor" value={s.h2} unit="ppm" color="text-pink-400" border="border-pink-500" />
-                    </div>
+                            {/* Process Cards */}
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                {/* Feedstock Pump */}
+                                <PumpCard pump={l.pump} />
 
-                    {/* Temperature Controls */}
-                    <h2 className="text-xl font-bold text-gray-300 mt-4 mb-1">Thermal Control</h2>
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                        {/* Feedstock Reservoir */}
-                        <SensorCard title="Feedstock Reservoir" value={s.t_feed_res} unit="°C" color="text-teal-400" border="border-teal-500"
-                            errorMsg={parseExactError(errMask, 1<<0, s.tc_errors?.t_feed_res, false)} />
+                                {/* Load Cell */}
+                                <LoadCellCard weight={s.weight} 
+                                    onTare={() => fetch('/api/control/tare', { method: 'POST' })}
+                                    onCalibrate={(w) => fetch(`/api/control/calibrate?value=${w}`, { method: 'POST' })} />
 
-                        {/* Feedstock Preheater */}
-                        <ZoneCard title="Feedstock Preheater"
-                            temp={s.t_feed_pre} sp={sp.feed_pre} out={h.feed_pre}
-                            onSetSp={(v, r) => sendSetpoint(0, v, r)}
-                            errorMsg={parseExactError(errMask, 1<<1, s.tc_errors?.t_feed_pre, true)} />
+                                {/* H2 Sensor */}
+                                <SensorCard title="H2 Sensor" value={s.h2} unit="ppm" color="text-pink-400" border="border-pink-500" />
+                            </div>
 
-                        {/* Liquid Reactor */}
-                        <ZoneCard title="Liquid Reactor"
-                            temp={s.t_liq_reac} sp={sp.liq_reac} out={h.liq_reac}
-                            onSetSp={(v, r) => sendSetpoint(1, v, r)}
-                            errorMsg={parseExactError(errMask, 1<<2, s.tc_errors?.t_liq_reac, true)} />
+                            {/* Temperature Controls */}
+                            <h2 className="text-xl font-bold text-gray-300 mt-4 mb-1">Thermal Control</h2>
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                                {/* Feedstock Reservoir */}
+                                <SensorCard title="Feedstock Reservoir" value={s.t_feed_res} unit="°C" color="text-teal-400" border="border-teal-500"
+                                    errorMsg={parseExactError(errMask, 1<<0, s.tc_errors?.t_feed_res, false)} />
 
-                        {/* Gas Reactor */}
-                        <ZoneCard title="Gas Reactor"
-                            temp={(s.t_gas_reac_int != null && !isNaN(s.t_gas_reac_int) && s.t_gas_reac_ext != null && !isNaN(s.t_gas_reac_ext))
-                                ? (s.t_gas_reac_int * 0.7 + s.t_gas_reac_ext * 0.3)
-                                : (s.t_gas_reac_ext != null && !isNaN(s.t_gas_reac_ext) ? s.t_gas_reac_ext : s.t_gas_reac_int)}
-                            sub={`Int: ${s.t_gas_reac_int != null && !isNaN(s.t_gas_reac_int) ? Number(s.t_gas_reac_int).toFixed(1) + '°C' : 'ERR'} | Ext: ${s.t_gas_reac_ext != null && !isNaN(s.t_gas_reac_ext) ? Number(s.t_gas_reac_ext).toFixed(1) + '°C' : 'ERR'}`}
-                            sp={sp.gas_reac} out={h.gas_reac}
-                            onSetSp={(v, r) => sendSetpoint(2, v, r)}
-                            errorMsg={parseExactError(errMask, (1<<3)|(1<<4), s.tc_errors?.t_gas_reac_int || s.tc_errors?.t_gas_reac_ext, true)} />
-                    </div>
+                                {/* Feedstock Preheater */}
+                                <ZoneCard title="Feedstock Preheater"
+                                    temp={s.t_feed_pre} sp={sp.feed_pre} out={h.feed_pre}
+                                    onSetSp={(v, r) => sendSetpoint(0, v, r)}
+                                    errorMsg={parseExactError(errMask, 1<<1, s.tc_errors?.t_feed_pre, true)} />
 
-                    {/* Chart.js Real-time Streaming & Historical Chart */}
-                    <TelemetryChart data={data} latest={latest} timeRange={timeRange} setTimeRange={setTimeRange} onRefresh={() => fetchHistory(timeRange)} isRefreshing={isRefreshing} />
+                                {/* Liquid Reactor */}
+                                <ZoneCard title="Liquid Reactor"
+                                    temp={s.t_liq_reac} sp={sp.liq_reac} out={h.liq_reac}
+                                    onSetSp={(v, r) => sendSetpoint(1, v, r)}
+                                    errorMsg={parseExactError(errMask, 1<<2, s.tc_errors?.t_liq_reac, true)} />
+
+                                {/* Gas Reactor */}
+                                <ZoneCard title="Gas Reactor"
+                                    temp={(s.t_gas_reac_int != null && !isNaN(s.t_gas_reac_int) && s.t_gas_reac_ext != null && !isNaN(s.t_gas_reac_ext))
+                                        ? (s.t_gas_reac_int * 0.7 + s.t_gas_reac_ext * 0.3)
+                                        : (s.t_gas_reac_ext != null && !isNaN(s.t_gas_reac_ext) ? s.t_gas_reac_ext : s.t_gas_reac_int)}
+                                    sub={`Int: ${s.t_gas_reac_int != null && !isNaN(s.t_gas_reac_int) ? Number(s.t_gas_reac_int).toFixed(1) + '°C' : 'ERR'} | Ext: ${s.t_gas_reac_ext != null && !isNaN(s.t_gas_reac_ext) ? Number(s.t_gas_reac_ext).toFixed(1) + '°C' : 'ERR'}`}
+                                    sp={sp.gas_reac} out={h.gas_reac}
+                                    onSetSp={(v, r) => sendSetpoint(2, v, r)}
+                                    errorMsg={parseExactError(errMask, (1<<3)|(1<<4), s.tc_errors?.t_gas_reac_int || s.tc_errors?.t_gas_reac_ext, true)} />
+                            </div>
+
+                            {/* Chart.js Real-time Streaming & Historical Chart */}
+                            <TelemetryChart data={data} latest={latest} timeRange={timeRange} setTimeRange={setTimeRange} onRefresh={() => fetchHistory(timeRange)} isRefreshing={isRefreshing} />
+                        </>
+                    )}
 
                     {/* Floating Active Alarm Panel (Non-modal) */}
                     {alarms.active && alarms.active.length > 0 && !alarmDismissed && (
