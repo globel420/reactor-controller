@@ -25,30 +25,60 @@
       "id": 1,
       "title": "Reactor State",
       "type": "stat",
-      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 0 },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 0,
+        "y": 0
+      },
       "datasource": {
         "type": "frser-sqlite-datasource",
         "uid": "Reactor-SQLite"
       },
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "thresholds" },
+          "color": {
+            "mode": "thresholds"
+          },
           "mappings": [
             {
               "options": {
-                "STANDBY": { "color": "yellow", "text": "STANDBY" },
-                "HEATING": { "color": "orange", "text": "HEATING" },
-                "HOLD": { "color": "green", "text": "HOLD" },
-                "PURGE": { "color": "blue", "text": "PURGE" },
-                "FAULT": { "color": "red", "text": "FAULT" },
-                "EMERGENCY_STOP": { "color": "dark-red", "text": "E-STOP" }
+                "STANDBY": {
+                  "color": "yellow",
+                  "text": "STANDBY"
+                },
+                "HEATING": {
+                  "color": "orange",
+                  "text": "HEATING"
+                },
+                "HOLD": {
+                  "color": "green",
+                  "text": "HOLD"
+                },
+                "PURGE": {
+                  "color": "blue",
+                  "text": "PURGE"
+                },
+                "FAULT": {
+                  "color": "red",
+                  "text": "FAULT"
+                },
+                "EMERGENCY_STOP": {
+                  "color": "dark-red",
+                  "text": "E-STOP"
+                }
               },
               "type": "value"
             }
           ],
           "thresholds": {
             "mode": "absolute",
-            "steps": [{ "color": "blue", "value": null }]
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
           }
         }
       },
@@ -61,8 +91,8 @@
       "targets": [
         {
           "queryType": "table",
-          "rawSql": "SELECT CASE control_state WHEN 0 THEN 'STANDBY' WHEN 1 THEN 'WARMUP' WHEN 2 THEN 'WORKING' ELSE 'UNKNOWN' END AS \"State\" FROM logs_1s WHERE ('$run' = '$__all' OR run_id = '$run') ORDER BY timestamp DESC LIMIT 1",
-          "refId": "A"
+          "refId": "A",
+          "queryText": "SELECT CASE control_state WHEN 0 THEN 'STANDBY' WHEN 1 THEN 'WARMUP' WHEN 2 THEN 'WORKING' ELSE 'UNKNOWN' END AS \"State\" FROM logs_1s WHERE ('$run' IN ('$__all', '__ALL__', 'All', '') OR run_id = CAST('$run' AS INT)) ORDER BY timestamp DESC LIMIT 1"
         }
       ]
     },
@@ -70,7 +100,12 @@
       "id": 2,
       "title": "Liquid Core",
       "type": "stat",
-      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 0 },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 4,
+        "y": 0
+      },
       "datasource": {
         "type": "frser-sqlite-datasource",
         "uid": "Reactor-SQLite"
@@ -78,14 +113,28 @@
       "fieldConfig": {
         "defaults": {
           "unit": "celsius",
-          "color": { "mode": "thresholds" },
+          "color": {
+            "mode": "thresholds"
+          },
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "#06b6d4", "value": null },
-              { "color": "#10b981", "value": 150 },
-              { "color": "#f59e0b", "value": 300 },
-              { "color": "#ef4444", "value": 450 }
+              {
+                "color": "#06b6d4",
+                "value": null
+              },
+              {
+                "color": "#10b981",
+                "value": 150
+              },
+              {
+                "color": "#f59e0b",
+                "value": 300
+              },
+              {
+                "color": "#ef4444",
+                "value": 450
+              }
             ]
           }
         }
@@ -98,8 +147,11 @@
       "targets": [
         {
           "queryType": "table",
-          "rawSql": "SELECT timestamp AS time, temp_liq_reac AS \"Liquid\" FROM logs_1s WHERE ('$run' = '$__all' OR run_id = '$run') ORDER BY timestamp ASC",
-          "refId": "A"
+          "refId": "A",
+          "queryText": "SELECT CAST(strftime('%s', timestamp) AS INT) AS time, temp_liq_reac AS \"Liquid\" FROM logs_1s WHERE ('$run' IN ('$__all', '__ALL__', 'All', '') OR run_id = CAST('$run' AS INT)) ORDER BY timestamp ASC",
+          "timeColumns": [
+            "time"
+          ]
         }
       ]
     },
@@ -107,7 +159,12 @@
       "id": 3,
       "title": "Gas Headspace",
       "type": "stat",
-      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 0 },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 8,
+        "y": 0
+      },
       "datasource": {
         "type": "frser-sqlite-datasource",
         "uid": "Reactor-SQLite"
@@ -115,13 +172,24 @@
       "fieldConfig": {
         "defaults": {
           "unit": "celsius",
-          "color": { "mode": "thresholds" },
+          "color": {
+            "mode": "thresholds"
+          },
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "#8b5cf6", "value": null },
-              { "color": "#ec4899", "value": 250 },
-              { "color": "#ef4444", "value": 450 }
+              {
+                "color": "#8b5cf6",
+                "value": null
+              },
+              {
+                "color": "#ec4899",
+                "value": 250
+              },
+              {
+                "color": "#ef4444",
+                "value": 450
+              }
             ]
           }
         }
@@ -134,8 +202,11 @@
       "targets": [
         {
           "queryType": "table",
-          "rawSql": "SELECT timestamp AS time, temp_gas_reac_int AS \"Gas Core\" FROM logs_1s WHERE ('$run' = '$__all' OR run_id = '$run') ORDER BY timestamp ASC",
-          "refId": "A"
+          "refId": "A",
+          "queryText": "SELECT CAST(strftime('%s', timestamp) AS INT) AS time, temp_gas_reac_int AS \"Gas Core\" FROM logs_1s WHERE ('$run' IN ('$__all', '__ALL__', 'All', '') OR run_id = CAST('$run' AS INT)) ORDER BY timestamp ASC",
+          "timeColumns": [
+            "time"
+          ]
         }
       ]
     },
@@ -143,7 +214,12 @@
       "id": 4,
       "title": "Feed Preheater",
       "type": "stat",
-      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 0 },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 12,
+        "y": 0
+      },
       "datasource": {
         "type": "frser-sqlite-datasource",
         "uid": "Reactor-SQLite"
@@ -151,13 +227,24 @@
       "fieldConfig": {
         "defaults": {
           "unit": "celsius",
-          "color": { "mode": "thresholds" },
+          "color": {
+            "mode": "thresholds"
+          },
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "#3b82f6", "value": null },
-              { "color": "#10b981", "value": 150 },
-              { "color": "#f59e0b", "value": 250 }
+              {
+                "color": "#3b82f6",
+                "value": null
+              },
+              {
+                "color": "#10b981",
+                "value": 150
+              },
+              {
+                "color": "#f59e0b",
+                "value": 250
+              }
             ]
           }
         }
@@ -170,8 +257,11 @@
       "targets": [
         {
           "queryType": "table",
-          "rawSql": "SELECT timestamp AS time, temp_feed_pre AS \"Preheater\" FROM logs_1s WHERE ('$run' = '$__all' OR run_id = '$run') ORDER BY timestamp ASC",
-          "refId": "A"
+          "refId": "A",
+          "queryText": "SELECT CAST(strftime('%s', timestamp) AS INT) AS time, temp_feed_pre AS \"Preheater\" FROM logs_1s WHERE ('$run' IN ('$__all', '__ALL__', 'All', '') OR run_id = CAST('$run' AS INT)) ORDER BY timestamp ASC",
+          "timeColumns": [
+            "time"
+          ]
         }
       ]
     },
@@ -179,7 +269,12 @@
       "id": 5,
       "title": "Dosing Flow Rate",
       "type": "stat",
-      "gridPos": { "h": 4, "w": 4, "x": 16, "y": 0 },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 16,
+        "y": 0
+      },
       "datasource": {
         "type": "frser-sqlite-datasource",
         "uid": "Reactor-SQLite"
@@ -187,13 +282,24 @@
       "fieldConfig": {
         "defaults": {
           "unit": "short",
-          "color": { "mode": "thresholds" },
+          "color": {
+            "mode": "thresholds"
+          },
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "#64748b", "value": null },
-              { "color": "#06b6d4", "value": 0.1 },
-              { "color": "#10b981", "value": 5.0 }
+              {
+                "color": "#64748b",
+                "value": null
+              },
+              {
+                "color": "#06b6d4",
+                "value": 0.1
+              },
+              {
+                "color": "#10b981",
+                "value": 5.0
+              }
             ]
           }
         }
@@ -206,8 +312,11 @@
       "targets": [
         {
           "queryType": "table",
-          "rawSql": "SELECT timestamp AS time, ROUND(dosing_rate_g_min, 2) AS \"Flow (g/min)\" FROM logs_1s WHERE ('$run' = '$__all' OR run_id = '$run') ORDER BY timestamp ASC",
-          "refId": "A"
+          "refId": "A",
+          "queryText": "SELECT CAST(strftime('%s', timestamp) AS INT) AS time, ROUND(dosing_rate_g_min, 2) AS \"Flow (g/min)\" FROM logs_1s WHERE ('$run' IN ('$__all', '__ALL__', 'All', '') OR run_id = CAST('$run' AS INT)) ORDER BY timestamp ASC",
+          "timeColumns": [
+            "time"
+          ]
         }
       ]
     },
@@ -215,7 +324,12 @@
       "id": 6,
       "title": "Cumulative Energy",
       "type": "stat",
-      "gridPos": { "h": 4, "w": 4, "x": 20, "y": 0 },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 20,
+        "y": 0
+      },
       "datasource": {
         "type": "frser-sqlite-datasource",
         "uid": "Reactor-SQLite"
@@ -223,13 +337,24 @@
       "fieldConfig": {
         "defaults": {
           "unit": "kwh",
-          "color": { "mode": "thresholds" },
+          "color": {
+            "mode": "thresholds"
+          },
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "#10b981", "value": null },
-              { "color": "#f59e0b", "value": 2.0 },
-              { "color": "#ef4444", "value": 5.0 }
+              {
+                "color": "#10b981",
+                "value": null
+              },
+              {
+                "color": "#f59e0b",
+                "value": 2.0
+              },
+              {
+                "color": "#ef4444",
+                "value": 5.0
+              }
             ]
           }
         }
@@ -242,16 +367,24 @@
       "targets": [
         {
           "queryType": "table",
-          "rawSql": "SELECT timestamp AS time, energy_kwh AS \"Energy (kWh)\" FROM logs_1s WHERE ('$run' = '$__all' OR run_id = '$run') ORDER BY timestamp ASC",
-          "refId": "A"
+          "refId": "A",
+          "queryText": "SELECT CAST(strftime('%s', timestamp) AS INT) AS time, energy_kwh AS \"Energy (kWh)\" FROM logs_1s WHERE ('$run' IN ('$__all', '__ALL__', 'All', '') OR run_id = CAST('$run' AS INT)) ORDER BY timestamp ASC",
+          "timeColumns": [
+            "time"
+          ]
         }
       ]
     },
     {
       "id": 7,
-      "title": "Thermal Zones — High-Contrast Waveforms",
+      "title": "Thermal Zones \u2014 High-Contrast Waveforms",
       "type": "timeseries",
-      "gridPos": { "h": 10, "w": 16, "x": 0, "y": 4 },
+      "gridPos": {
+        "h": 10,
+        "w": 16,
+        "x": 0,
+        "y": 4
+      },
       "datasource": {
         "type": "frser-sqlite-datasource",
         "uid": "Reactor-SQLite"
@@ -270,28 +403,75 @@
         },
         "overrides": [
           {
-            "matcher": { "id": "byName", "options": "Liquid Core" },
-            "properties": [{ "id": "color", "value": { "fixedColor": "#ef4444", "mode": "fixed" } }]
+            "matcher": {
+              "id": "byName",
+              "options": "Liquid Core"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#ef4444",
+                  "mode": "fixed"
+                }
+              }
+            ]
           },
           {
-            "matcher": { "id": "byName", "options": "Gas Core" },
-            "properties": [{ "id": "color", "value": { "fixedColor": "#f59e0b", "mode": "fixed" } }]
+            "matcher": {
+              "id": "byName",
+              "options": "Gas Core"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#f59e0b",
+                  "mode": "fixed"
+                }
+              }
+            ]
           },
           {
-            "matcher": { "id": "byName", "options": "Preheater" },
-            "properties": [{ "id": "color", "value": { "fixedColor": "#06b6d4", "mode": "fixed" } }]
+            "matcher": {
+              "id": "byName",
+              "options": "Preheater"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#06b6d4",
+                  "mode": "fixed"
+                }
+              }
+            ]
           },
           {
-            "matcher": { "id": "byName", "options": "Gas Skin" },
-            "properties": [{ "id": "color", "value": { "fixedColor": "#8b5cf6", "mode": "fixed" } }]
+            "matcher": {
+              "id": "byName",
+              "options": "Gas Skin"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#8b5cf6",
+                  "mode": "fixed"
+                }
+              }
+            ]
           }
         ]
       },
       "targets": [
         {
           "queryType": "table",
-          "rawSql": "SELECT timestamp AS time, temp_liq_reac AS \"Liquid Core\", temp_gas_reac_int AS \"Gas Core\", temp_feed_pre AS \"Preheater\", temp_gas_reac_ext AS \"Gas Skin\" FROM logs_1s WHERE ('$run' = '$__all' OR run_id = '$run') ORDER BY timestamp ASC",
-          "refId": "A"
+          "refId": "A",
+          "queryText": "SELECT CAST(strftime('%s', timestamp) AS INT) AS time, temp_liq_reac AS \"Liquid Core\", temp_gas_reac_int AS \"Gas Core\", temp_feed_pre AS \"Preheater\", temp_gas_reac_ext AS \"Gas Skin\" FROM logs_1s WHERE ('$run' IN ('$__all', '__ALL__', 'All', '') OR run_id = CAST('$run' AS INT)) ORDER BY timestamp ASC",
+          "timeColumns": [
+            "time"
+          ]
         }
       ]
     },
@@ -299,7 +479,12 @@
       "id": 8,
       "title": "Zone Temperatures vs Operational Limits",
       "type": "bargauge",
-      "gridPos": { "h": 10, "w": 8, "x": 16, "y": 4 },
+      "gridPos": {
+        "h": 10,
+        "w": 8,
+        "x": 16,
+        "y": 4
+      },
       "datasource": {
         "type": "frser-sqlite-datasource",
         "uid": "Reactor-SQLite"
@@ -312,10 +497,22 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "#06b6d4", "value": null },
-              { "color": "#10b981", "value": 150 },
-              { "color": "#f59e0b", "value": 300 },
-              { "color": "#ef4444", "value": 450 }
+              {
+                "color": "#06b6d4",
+                "value": null
+              },
+              {
+                "color": "#10b981",
+                "value": 150
+              },
+              {
+                "color": "#f59e0b",
+                "value": 300
+              },
+              {
+                "color": "#ef4444",
+                "value": 450
+              }
             ]
           }
         }
@@ -328,8 +525,8 @@
       "targets": [
         {
           "queryType": "table",
-          "rawSql": "SELECT temp_liq_reac AS \"Liquid Core\", temp_gas_reac_int AS \"Gas Headspace\", temp_feed_pre AS \"Preheater\", temp_gas_reac_ext AS \"Gas Skin\", temp_feed_res AS \"Feed Tank\" FROM logs_1s WHERE ('$run' = '$__all' OR run_id = '$run') ORDER BY timestamp DESC LIMIT 1",
-          "refId": "A"
+          "refId": "A",
+          "queryText": "SELECT temp_liq_reac AS \"Liquid Core\", temp_gas_reac_int AS \"Gas Headspace\", temp_feed_pre AS \"Preheater\", temp_gas_reac_ext AS \"Gas Skin\", temp_feed_res AS \"Feed Tank\" FROM logs_1s WHERE ('$run' IN ('$__all', '__ALL__', 'All', '') OR run_id = CAST('$run' AS INT)) ORDER BY timestamp DESC LIMIT 1"
         }
       ]
     },
@@ -337,7 +534,12 @@
       "id": 9,
       "title": "Feedstock Tank Mass & Depletion (kg)",
       "type": "timeseries",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 14 },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 14
+      },
       "datasource": {
         "type": "frser-sqlite-datasource",
         "uid": "Reactor-SQLite"
@@ -352,14 +554,20 @@
             "gradientMode": "opacity"
           },
           "unit": "masskg",
-          "color": { "mode": "fixed", "fixedColor": "#10b981" }
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#10b981"
+          }
         }
       },
       "targets": [
         {
           "queryType": "table",
-          "rawSql": "SELECT timestamp AS time, weight AS \"Tank Weight (g)\" FROM logs_1s WHERE ('$run' = '$__all' OR run_id = '$run') ORDER BY timestamp ASC",
-          "refId": "A"
+          "refId": "A",
+          "queryText": "SELECT CAST(strftime('%s', timestamp) AS INT) AS time, weight AS \"Tank Weight (g)\" FROM logs_1s WHERE ('$run' IN ('$__all', '__ALL__', 'All', '') OR run_id = CAST('$run' AS INT)) ORDER BY timestamp ASC",
+          "timeColumns": [
+            "time"
+          ]
         }
       ]
     },
@@ -367,7 +575,12 @@
       "id": 10,
       "title": "Heater PWM Duty Cycles (%)",
       "type": "timeseries",
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 14 },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 14
+      },
       "datasource": {
         "type": "frser-sqlite-datasource",
         "uid": "Reactor-SQLite"
@@ -385,24 +598,60 @@
         },
         "overrides": [
           {
-            "matcher": { "id": "byName", "options": "Preheater PWM" },
-            "properties": [{ "id": "color", "value": { "fixedColor": "#06b6d4", "mode": "fixed" } }]
+            "matcher": {
+              "id": "byName",
+              "options": "Preheater PWM"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#06b6d4",
+                  "mode": "fixed"
+                }
+              }
+            ]
           },
           {
-            "matcher": { "id": "byName", "options": "Liquid Core PWM" },
-            "properties": [{ "id": "color", "value": { "fixedColor": "#ef4444", "mode": "fixed" } }]
+            "matcher": {
+              "id": "byName",
+              "options": "Liquid Core PWM"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#ef4444",
+                  "mode": "fixed"
+                }
+              }
+            ]
           },
           {
-            "matcher": { "id": "byName", "options": "Gas Core PWM" },
-            "properties": [{ "id": "color", "value": { "fixedColor": "#f59e0b", "mode": "fixed" } }]
+            "matcher": {
+              "id": "byName",
+              "options": "Gas Core PWM"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#f59e0b",
+                  "mode": "fixed"
+                }
+              }
+            ]
           }
         ]
       },
       "targets": [
         {
           "queryType": "table",
-          "rawSql": "SELECT timestamp AS time, ROUND(heater_feed_pre, 1) AS \"Preheater PWM\", ROUND(heater_liq_reac, 1) AS \"Liquid Core PWM\", ROUND(heater_gas_reac, 1) AS \"Gas Core PWM\" FROM logs_1s WHERE ('$run' = '$__all' OR run_id = '$run') ORDER BY timestamp ASC",
-          "refId": "A"
+          "refId": "A",
+          "queryText": "SELECT CAST(strftime('%s', timestamp) AS INT) AS time, ROUND(heater_feed_pre, 1) AS \"Preheater PWM\", ROUND(heater_liq_reac, 1) AS \"Liquid Core PWM\", ROUND(heater_gas_reac, 1) AS \"Gas Core PWM\" FROM logs_1s WHERE ('$run' IN ('$__all', '__ALL__', 'All', '') OR run_id = CAST('$run' AS INT)) ORDER BY timestamp ASC",
+          "timeColumns": [
+            "time"
+          ]
         }
       ]
     },
@@ -410,7 +659,12 @@
       "id": 11,
       "title": "Hydrogen Safety Level (MQ-8 PPM)",
       "type": "gauge",
-      "gridPos": { "h": 7, "w": 8, "x": 0, "y": 22 },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 0,
+        "y": 22
+      },
       "datasource": {
         "type": "frser-sqlite-datasource",
         "uid": "Reactor-SQLite"
@@ -423,9 +677,18 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "#10b981", "value": null },
-              { "color": "#f59e0b", "value": 200 },
-              { "color": "#ef4444", "value": 500 }
+              {
+                "color": "#10b981",
+                "value": null
+              },
+              {
+                "color": "#f59e0b",
+                "value": 200
+              },
+              {
+                "color": "#ef4444",
+                "value": 500
+              }
             ]
           }
         }
@@ -433,8 +696,8 @@
       "targets": [
         {
           "queryType": "table",
-          "rawSql": "SELECT h2_ppm AS \"H2 Concentration\" FROM logs_1s WHERE ('$run' = '$__all' OR run_id = '$run') ORDER BY timestamp DESC LIMIT 1",
-          "refId": "A"
+          "refId": "A",
+          "queryText": "SELECT h2_ppm AS \"H2 Concentration\" FROM logs_1s WHERE ('$run' IN ('$__all', '__ALL__', 'All', '') OR run_id = CAST('$run' AS INT)) ORDER BY timestamp DESC LIMIT 1"
         }
       ]
     },
@@ -442,7 +705,12 @@
       "id": 12,
       "title": "Recent Alarm Log",
       "type": "table",
-      "gridPos": { "h": 7, "w": 16, "x": 8, "y": 22 },
+      "gridPos": {
+        "h": 7,
+        "w": 16,
+        "x": 8,
+        "y": 22
+      },
       "datasource": {
         "type": "frser-sqlite-datasource",
         "uid": "Reactor-SQLite"
@@ -453,8 +721,8 @@
       "targets": [
         {
           "queryType": "table",
-          "rawSql": "SELECT timestamp AS \"Time\", sensor AS \"Sensor\", exact_error AS \"Error Details\", cleared_timestamp AS \"Cleared\" FROM error_logs ORDER BY timestamp DESC LIMIT 20",
-          "refId": "A"
+          "refId": "A",
+          "queryText": "SELECT timestamp AS \"Time\", sensor AS \"Sensor\", exact_error AS \"Error Details\", cleared_timestamp AS \"Cleared\" FROM error_logs ORDER BY timestamp DESC LIMIT 20"
         }
       ]
     }
@@ -462,7 +730,11 @@
   "refresh": "1s",
   "schemaVersion": 38,
   "style": "dark",
-  "tags": ["reactor", "scada", "operator"],
+  "tags": [
+    "reactor",
+    "scada",
+    "operator"
+  ],
   "templating": {
     "list": [
       {
@@ -490,11 +762,17 @@
     ]
   },
   "time": {
-    "from": "now-30m",
+    "from": "now-6h",
     "to": "now"
   },
   "timepicker": {
-    "refresh_intervals": ["1s", "5s", "10s", "30s", "1m"]
+    "refresh_intervals": [
+      "1s",
+      "5s",
+      "10s",
+      "30s",
+      "1m"
+    ]
   },
   "timezone": "browser",
   "title": "Reactor SCADA Command Center (Operator Console)",
