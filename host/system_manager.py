@@ -307,6 +307,9 @@ class RedirectHandler(http.server.BaseHTTPRequestHandler):
         self.send_header("Connection", "close")
         self.end_headers()
 
+    def do_HEAD(self):
+        self.do_GET()
+
     def log_message(self, format, *args):
         pass
 

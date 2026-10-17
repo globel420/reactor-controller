@@ -1,0 +1,612 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Reactor Controller — Topology & Verification Checklist</title>
+  <script src="https://www.gstatic.com/antigravity/web/dev/tailwindcss.min.js"></script>
+  <style>
+    @keyframes pulseGlow {
+      0%, 100% { opacity: 0.8; transform: scale(1); }
+      50% { opacity: 1; transform: scale(1.02); }
+    }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 antialiased p-4 sm:p-6 font-sans">
+
+  <div class="max-w-5xl mx-auto space-y-6">
+
+    <!-- Header & Summary Card -->
+    <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-sm">
+      <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+          <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-400 text-xs font-semibold uppercase tracking-wider mb-2">
+            <span class="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
+            Raspberry Pi 4 ("rig") • Telemetry & Analytics Pipeline Verified Live
+          </div>
+          <h1 class="text-2xl font-bold tracking-tight text-white">Reactor Controller Topology & Verification Checklist</h1>
+          <p class="text-slate-400 text-sm mt-1">
+            End-to-end interactive map across telemetry, SQLite storage, process analytics, Grafana, firmware safety, and physical rig hardware.
+          </p>
+        </div>
+
+        <!-- Verification Counter Badge -->
+        <div class="flex flex-col items-end justify-center bg-slate-950 border border-slate-800 rounded-xl p-4 min-w-[220px]">
+          <div class="flex items-center justify-between w-full mb-1">
+            <span class="text-xs font-medium text-slate-400">Verified Progress</span>
+            <span id="progress-percent" class="text-xs font-bold text-emerald-400">68%</span>
+          </div>
+          <div class="w-full bg-slate-800 rounded-full h-2.5 overflow-hidden mb-1">
+            <div id="progress-bar" class="bg-gradient-to-r from-blue-500 to-emerald-400 h-2.5 rounded-full transition-all duration-300" style="width: 68%"></div>
+          </div>
+          <div class="flex justify-between w-full text-xs text-slate-400">
+            <span id="progress-count">19 of 28 Complete</span>
+            <button onclick="resetAllChecks()" class="hover:underline text-xs text-blue-400 transition-colors">Reset</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Quick Filter Pills -->
+      <div class="flex flex-wrap gap-2 mt-5 pt-4 border-t border-slate-800">
+        <button onclick="filterCards('all')" class="filter-btn active px-3 py-1.5 rounded-lg text-xs font-medium bg-blue-600 text-white shadow-xs transition-colors" data-filter="all">All Systems (28)</button>
+        <button onclick="filterCards('wifi')" class="filter-btn px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-800 text-slate-300 hover:text-white transition-colors" data-filter="wifi">📶 Field Wi-Fi & Host (4/4)</button>
+        <button onclick="filterCards('telemetry')" class="filter-btn px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-800 text-slate-300 hover:text-white transition-colors" data-filter="telemetry">📊 Storage Pipeline (4/4)</button>
+        <button onclick="filterCards('analytics')" class="filter-btn px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-800 text-slate-300 hover:text-white transition-colors" data-filter="analytics">⚡ Process Analytics (4/4)</button>
+        <button onclick="filterCards('grafana')" class="filter-btn px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-800 text-slate-300 hover:text-white transition-colors" data-filter="grafana">📈 Grafana Web (4/4)</button>
+        <button onclick="filterCards('safety')" class="filter-btn px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-800 text-slate-300 hover:text-white transition-colors" data-filter="safety">🛡️ Safety Watchdogs (3/4)</button>
+        <button onclick="filterCards('hardware')" class="filter-btn px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-800 text-slate-300 hover:text-white transition-colors" data-filter="hardware">🔌 Physical Hardware (0/8)</button>
+      </div>
+    </div>
+
+    <!-- FLOW PIPELINE -->
+    <div class="grid grid-cols-2 md:grid-cols-5 gap-3 text-center">
+      <div class="bg-slate-900 border border-emerald-500/30 rounded-xl p-3 shadow-xs">
+        <div class="text-xs font-semibold text-emerald-400 uppercase tracking-wide">1. Host Rig</div>
+        <div class="text-sm font-medium mt-1">Docker Compose Live</div>
+        <span class="inline-block mt-1 text-[10px] px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-mono">100.69.0.69</span>
+      </div>
+      <div class="bg-slate-900 border border-emerald-500/30 rounded-xl p-3 shadow-xs">
+        <div class="text-xs font-semibold text-emerald-400 uppercase tracking-wide">2. Field Wi-Fi</div>
+        <div class="text-sm font-medium mt-1">Ad-Hoc AP & Port 80</div>
+        <span class="inline-block mt-1 text-[10px] px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-mono">10.42.0.1</span>
+      </div>
+      <div class="bg-slate-900 border border-emerald-500/30 rounded-xl p-3 shadow-xs">
+        <div class="text-xs font-semibold text-emerald-400 uppercase tracking-wide">3. Telemetry Ingest</div>
+        <div class="text-sm font-medium mt-1">1Hz Raw Streaming</div>
+        <span class="inline-block mt-1 text-[10px] px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-mono">logs_1s Active</span>
+      </div>
+      <div class="bg-slate-900 border border-emerald-500/30 rounded-xl p-3 shadow-xs">
+        <div class="text-xs font-semibold text-emerald-400 uppercase tracking-wide">4. Process Analytics</div>
+        <div class="text-sm font-medium mt-1">Ramp & Mass Flow</div>
+        <span class="inline-block mt-1 text-[10px] px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-mono">°C/min, g/min</span>
+      </div>
+      <div class="bg-slate-900 border border-emerald-500/30 rounded-xl p-3 shadow-xs col-span-2 md:col-span-1">
+        <div class="text-xs font-semibold text-emerald-400 uppercase tracking-wide">5. Visual Analytics</div>
+        <div class="text-sm font-medium mt-1">Grafana 13 Live</div>
+        <span class="inline-block mt-1 text-[10px] px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-mono">Port 3000 Active</span>
+      </div>
+    </div>
+
+    <!-- SECTION: FIELD WI-FI & PI SYSTEM MANAGER -->
+    <div class="space-y-3" data-section="wifi">
+      <div class="flex items-center gap-2">
+        <div class="w-3 h-3 rounded-full bg-emerald-500"></div>
+        <h2 class="text-base font-bold text-white">Field Wi-Fi & Pi System Manager</h2>
+        <span class="text-xs text-emerald-400 font-semibold ml-auto">100% VERIFIED LIVE</span>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <!-- Open Hotspot & Port 80 -->
+        <label class="group relative flex items-start gap-3.5 bg-slate-900 border border-emerald-500/40 rounded-xl p-4 cursor-pointer transition-all shadow-xs">
+          <input type="checkbox" id="item-wifi_hotspot" checked class="mt-1 h-4 w-4 rounded border-slate-700 text-emerald-500 focus:ring-emerald-400" onchange="updateProgress()">
+          <div class="flex-1">
+            <div class="flex items-center justify-between">
+              <span class="font-semibold text-sm text-emerald-300">Open Field Hotspot & Port 80 Redirect</span>
+              <span class="text-xs px-2 py-0.5 rounded-md bg-emerald-500/20 text-emerald-400 font-mono">Reactor-Rig</span>
+            </div>
+            <p class="text-xs text-slate-400 mt-1">Pi broadcasts open SSID "Reactor-Rig" on 10.42.0.1. Port 80 HTTP redirector auto-forwards phone/laptop browsers directly to :8000 control panel without typing ports.</p>
+            <div class="mt-2 font-mono text-xs text-slate-500">wlan0 • 10.42.0.1:80 ➔ :8000</div>
+          </div>
+        </label>
+
+        <!-- Smart Boot Failover -->
+        <label class="group relative flex items-start gap-3.5 bg-slate-900 border border-emerald-500/40 rounded-xl p-4 cursor-pointer transition-all shadow-xs">
+          <input type="checkbox" id="item-boot_failover" checked class="mt-1 h-4 w-4 rounded border-slate-700 text-emerald-500 focus:ring-emerald-400" onchange="updateProgress()">
+          <div class="flex-1">
+            <div class="flex items-center justify-between">
+              <span class="font-semibold text-sm text-emerald-300">Smart Boot Failover</span>
+              <span class="text-xs px-2 py-0.5 rounded-md bg-emerald-500/20 text-emerald-400 font-mono">15s Failover</span>
+            </div>
+            <p class="text-xs text-slate-400 mt-1">At boot, Pi monitors for known home/lab Wi-Fi networks. If unassociated after 15s, daemon immediately activates "Reactor-Rig" Hotspot so the rig is always accessible in the field.</p>
+            <div class="mt-2 font-mono text-xs text-slate-500">reactor-system-manager.service</div>
+          </div>
+        </label>
+
+        <!-- Safe Fallback Anti-Lockout -->
+        <label class="group relative flex items-start gap-3.5 bg-slate-900 border border-emerald-500/40 rounded-xl p-4 cursor-pointer transition-all shadow-xs">
+          <input type="checkbox" id="item-safe_reconnect" checked class="mt-1 h-4 w-4 rounded border-slate-700 text-emerald-500 focus:ring-emerald-400" onchange="updateProgress()">
+          <div class="flex-1">
+            <div class="flex items-center justify-between">
+              <span class="font-semibold text-sm text-emerald-300">Safe Reconnect & Anti-Lockout Fallback</span>
+              <span class="text-xs px-2 py-0.5 rounded-md bg-emerald-500/20 text-emerald-400 font-mono">Fail-Safe</span>
+            </div>
+            <p class="text-xs text-slate-400 mt-1">When user commands the Pi to join a Wi-Fi network, if authentication fails or connection times out (30s), daemon instantly re-activates Reactor-AP hotspot. User is never stranded.</p>
+            <div class="mt-2 font-mono text-xs text-slate-500">nmcli connection up Reactor-AP</div>
+          </div>
+        </label>
+
+        <!-- Pi Settings UI & Host Telemetry -->
+        <label class="group relative flex items-start gap-3.5 bg-slate-900 border border-emerald-500/40 rounded-xl p-4 cursor-pointer transition-all shadow-xs">
+          <input type="checkbox" id="item-pi_settings_modal" checked class="mt-1 h-4 w-4 rounded border-slate-700 text-emerald-500 focus:ring-emerald-400" onchange="updateProgress()">
+          <div class="flex-1">
+            <div class="flex items-center justify-between">
+              <span class="font-semibold text-sm text-emerald-300">Pi Settings UI & Host Telemetry</span>
+              <span class="text-xs px-2 py-0.5 rounded-md bg-emerald-500/20 text-emerald-400 font-mono">Supervisory UI</span>
+            </div>
+            <p class="text-xs text-slate-400 mt-1">Dedicated Pi Settings modal in the web control panel: real-time Wi-Fi scanning with signal %, network join, host telemetry (CPU °C, RAM, Disk, DB size), Docker restart, and system reboot.</p>
+            <div class="mt-2 font-mono text-xs text-slate-500">API Port 8001 ➔ Container Proxy</div>
+          </div>
+        </label>
+      </div>
+    </div>
+
+    <!-- SECTION 1: TELEMETRY & STORAGE PIPELINE -->
+    <div class="space-y-3" data-section="telemetry">
+      <div class="flex items-center gap-2">
+        <div class="w-3 h-3 rounded-full bg-emerald-500"></div>
+        <h2 class="text-base font-bold text-white">Telemetry & Data Storage Pipeline</h2>
+        <span class="text-xs text-emerald-400 font-semibold ml-auto">100% VERIFIED LIVE</span>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <!-- DB WAL -->
+        <label class="group relative flex items-start gap-3.5 bg-slate-900 border border-emerald-500/40 rounded-xl p-4 cursor-pointer transition-all shadow-xs">
+          <input type="checkbox" id="item-sqlite_wal" checked class="mt-1 h-4 w-4 rounded border-slate-700 text-emerald-500 focus:ring-emerald-400" onchange="updateProgress()">
+          <div class="flex-1">
+            <div class="flex items-center justify-between">
+              <span class="font-semibold text-sm text-emerald-300">Single-File SQLite (WAL Mode)</span>
+              <span class="text-xs px-2 py-0.5 rounded-md bg-emerald-500/20 text-emerald-400 font-mono">PRAGMA wal</span>
+            </div>
+            <p class="text-xs text-slate-400 mt-1">High-concurrency database engine. Non-locking 1Hz telemetry writes concurrent with Grafana dashboard queries.</p>
+            <div class="mt-2 font-mono text-xs text-slate-500">/home/pi/reactor-controller/data/reactor_logs.db</div>
+          </div>
+        </label>
+
+        <!-- Multi-run -->
+        <label class="group relative flex items-start gap-3.5 bg-slate-900 border border-emerald-500/40 rounded-xl p-4 cursor-pointer transition-all shadow-xs">
+          <input type="checkbox" id="item-run_partitioning" checked class="mt-1 h-4 w-4 rounded border-slate-700 text-emerald-500 focus:ring-emerald-400" onchange="updateProgress()">
+          <div class="flex-1">
+            <div class="flex items-center justify-between">
+              <span class="font-semibold text-sm text-emerald-300">Run Partitioning & Zero Data Loss</span>
+              <span class="text-xs px-2 py-0.5 rounded-md bg-emerald-500/20 text-emerald-400 font-mono">/api/run/new</span>
+            </div>
+            <p class="text-xs text-slate-400 mt-1">Starting a new run no longer deletes logs. Past runs are archived with timestamps and isolated by run_id.</p>
+            <div class="mt-2 font-mono text-xs text-slate-500">runs_metadata table with state persistence</div>
+          </div>
+        </label>
+
+        <!-- Downsampled rollups -->
+        <label class="group relative flex items-start gap-3.5 bg-slate-900 border border-emerald-500/40 rounded-xl p-4 cursor-pointer transition-all shadow-xs">
+          <input type="checkbox" id="item-rollups" checked class="mt-1 h-4 w-4 rounded border-slate-700 text-emerald-500 focus:ring-emerald-400" onchange="updateProgress()">
+          <div class="flex-1">
+            <div class="flex items-center justify-between">
+              <span class="font-semibold text-sm text-emerald-300">Hierarchical Downsampling Rollups</span>
+              <span class="text-xs px-2 py-0.5 rounded-md bg-emerald-500/20 text-emerald-400 font-mono">1s / 1m / 10m</span>
+            </div>
+            <p class="text-xs text-slate-400 mt-1">Automated background analytical rollups preserving run_id for fast long-horizon Grafana queries.</p>
+            <div class="mt-2 font-mono text-xs text-slate-500">logs_1s • logs_1m • logs_10m</div>
+          </div>
+        </label>
+
+        <!-- Permanent Retention -->
+        <label class="group relative flex items-start gap-3.5 bg-slate-900 border border-emerald-500/40 rounded-xl p-4 cursor-pointer transition-all shadow-xs">
+          <input type="checkbox" id="item-retention" checked class="mt-1 h-4 w-4 rounded border-slate-700 text-emerald-500 focus:ring-emerald-400" onchange="updateProgress()">
+          <div class="flex-1">
+            <div class="flex items-center justify-between">
+              <span class="font-semibold text-sm text-emerald-300">Permanent Data Retention</span>
+              <span class="text-xs px-2 py-0.5 rounded-md bg-emerald-500/20 text-emerald-400 font-mono">RETENTION=0</span>
+            </div>
+            <p class="text-xs text-slate-400 mt-1">Automated pruning is disabled by default so all historical batch experiments remain preserved permanently.</p>
+            <div class="mt-2 font-mono text-xs text-slate-500">Configurable via RETENTION_RAW_HOURS</div>
+          </div>
+        </label>
+      </div>
+    </div>
+
+    <!-- SECTION 2: PROCESS ANALYTICS & DERIVED METRICS -->
+    <div class="space-y-3" data-section="analytics">
+      <div class="flex items-center gap-2">
+        <div class="w-3 h-3 rounded-full bg-amber-500"></div>
+        <h2 class="text-base font-bold text-white">Process Analytics & Derived Metrics Engine</h2>
+        <span class="text-xs text-emerald-400 font-semibold ml-auto">100% VERIFIED LIVE</span>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <!-- Thermal Ramp Rates -->
+        <label class="group relative flex items-start gap-3.5 bg-slate-900 border border-emerald-500/40 rounded-xl p-4 cursor-pointer transition-all shadow-xs">
+          <input type="checkbox" id="item-thermal_ramps" checked class="mt-1 h-4 w-4 rounded border-slate-700 text-emerald-500 focus:ring-emerald-400" onchange="updateProgress()">
+          <div class="flex-1">
+            <div class="flex items-center justify-between">
+              <span class="font-semibold text-sm text-emerald-300">Thermal Ramp Rate Derivatives</span>
+              <span class="text-xs px-2 py-0.5 rounded-md bg-emerald-500/20 text-emerald-400 font-mono">°C / min</span>
+            </div>
+            <p class="text-xs text-slate-400 mt-1">Real-time numerical differentiation (ΔT / Δt × 60) for Preheater, Liquid Core, and Gas Headspace zones.</p>
+            <div class="mt-2 text-xs text-slate-500 font-mono">Logged to ramp_feed_pre, ramp_liq_reac, ramp_gas_reac</div>
+          </div>
+        </label>
+
+        <!-- Gravimetric Dosing Rate -->
+        <label class="group relative flex items-start gap-3.5 bg-slate-900 border border-emerald-500/40 rounded-xl p-4 cursor-pointer transition-all shadow-xs">
+          <input type="checkbox" id="item-dosing_rate" checked class="mt-1 h-4 w-4 rounded border-slate-700 text-emerald-500 focus:ring-emerald-400" onchange="updateProgress()">
+          <div class="flex-1">
+            <div class="flex items-center justify-between">
+              <span class="font-semibold text-sm text-emerald-300">Gravimetric Dosing Rate Calculation</span>
+              <span class="text-xs px-2 py-0.5 rounded-md bg-emerald-500/20 text-emerald-400 font-mono">g / min</span>
+            </div>
+            <p class="text-xs text-slate-400 mt-1">Continuous mass depletion rate computed from rolling load cell history (Δmass / Δt) in grams per minute.</p>
+            <div class="mt-2 text-xs text-slate-500 font-mono">Logged to dosing_rate_g_min column</div>
+          </div>
+        </label>
+
+        <!-- Cumulative Energy -->
+        <label class="group relative flex items-start gap-3.5 bg-slate-900 border border-emerald-500/40 rounded-xl p-4 cursor-pointer transition-all shadow-xs">
+          <input type="checkbox" id="item-energy_tracking" checked class="mt-1 h-4 w-4 rounded border-slate-700 text-emerald-500 focus:ring-emerald-400" onchange="updateProgress()">
+          <div class="flex-1">
+            <div class="flex items-center justify-between">
+              <span class="font-semibold text-sm text-emerald-300">Cumulative Electrical Energy Tracking</span>
+              <span class="text-xs px-2 py-0.5 rounded-md bg-emerald-500/20 text-emerald-400 font-mono">kWh & Watts</span>
+            </div>
+            <p class="text-xs text-slate-400 mt-1">Dynamic power integration based on rated heating bands (Preheater: 1.0kW, Liquid: 1.5kW, Gas: 1.2kW) and PWM duty cycles.</p>
+            <div class="mt-2 text-xs text-slate-500 font-mono">Logged to energy_kwh with automatic run reset</div>
+          </div>
+        </label>
+
+        <!-- Run Analytics API -->
+        <label class="group relative flex items-start gap-3.5 bg-slate-900 border border-emerald-500/40 rounded-xl p-4 cursor-pointer transition-all shadow-xs">
+          <input type="checkbox" id="item-analytics_api" checked class="mt-1 h-4 w-4 rounded border-slate-700 text-emerald-500 focus:ring-emerald-400" onchange="updateProgress()">
+          <div class="flex-1">
+            <div class="flex items-center justify-between">
+              <span class="font-semibold text-sm text-emerald-300">Batch Analytics Summary REST Endpoints</span>
+              <span class="text-xs px-2 py-0.5 rounded-md bg-emerald-500/20 text-emerald-400 font-mono">/api/run/analytics</span>
+            </div>
+            <p class="text-xs text-slate-400 mt-1">Instant summary of run duration, zone min/max/avg temps, max ramp rates, total mass consumed, and total kWh.</p>
+            <div class="mt-2 text-xs text-emerald-400 font-medium">Verified Live via curl & unit tests</div>
+          </div>
+        </label>
+      </div>
+    </div>
+
+    <!-- SECTION 3: GRAFANA & VISUAL ANALYTICS -->
+    <div class="space-y-3" data-section="grafana">
+      <div class="flex items-center gap-2">
+        <div class="w-3 h-3 rounded-full bg-blue-500"></div>
+        <h2 class="text-base font-bold text-white">Grafana Dashboards & Visual Analytics</h2>
+        <span class="text-xs text-blue-400 font-semibold ml-auto">100% VERIFIED LIVE</span>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <!-- Grafana Web App -->
+        <label class="group relative flex items-start gap-3.5 bg-slate-900 border border-blue-500/40 rounded-xl p-4 cursor-pointer transition-all shadow-xs">
+          <input type="checkbox" id="item-grafana_app" checked class="mt-1 h-4 w-4 rounded border-slate-700 text-blue-500 focus:ring-blue-400" onchange="updateProgress()">
+          <div class="flex-1">
+            <div class="flex items-center justify-between">
+              <span class="font-semibold text-sm text-blue-300">Grafana 13 Web Application</span>
+              <span class="text-xs px-2 py-0.5 rounded-md bg-blue-500/20 text-blue-400 font-mono">Port 3000</span>
+            </div>
+            <p class="text-xs text-slate-400 mt-1">Live web visualization container with anonymous admin embedding. Running on the Pi.</p>
+            <div class="mt-2 text-xs text-emerald-400 font-medium">http://rig.harrybartos.com:3000</div>
+          </div>
+        </label>
+
+        <!-- SQLite Datasource -->
+        <label class="group relative flex items-start gap-3.5 bg-slate-900 border border-blue-500/40 rounded-xl p-4 cursor-pointer transition-all shadow-xs">
+          <input type="checkbox" id="item-sqlite_datasource" checked class="mt-1 h-4 w-4 rounded border-slate-700 text-blue-500 focus:ring-blue-400" onchange="updateProgress()">
+          <div class="flex-1">
+            <div class="flex items-center justify-between">
+              <span class="font-semibold text-sm text-blue-300">frser-sqlite-datasource Plugin</span>
+              <span class="text-xs px-2 py-0.5 rounded-md bg-blue-500/20 text-blue-400 font-mono">v4.0.6</span>
+            </div>
+            <p class="text-xs text-slate-400 mt-1">ARM64 native SQLite plugin auto-provisioned to read /data/reactor_logs.db in read-only mode.</p>
+            <div class="mt-2 text-xs text-slate-500 font-mono">UID: Reactor-SQLite (Status: 200 OK)</div>
+          </div>
+        </label>
+
+        <!-- Interactive Run Selector -->
+        <label class="group relative flex items-start gap-3.5 bg-slate-900 border border-blue-500/40 rounded-xl p-4 cursor-pointer transition-all shadow-xs">
+          <input type="checkbox" id="item-run_selector" checked class="mt-1 h-4 w-4 rounded border-slate-700 text-blue-500 focus:ring-blue-400" onchange="updateProgress()">
+          <div class="flex-1">
+            <div class="flex items-center justify-between">
+              <span class="font-semibold text-sm text-blue-300">Interactive Run Selector Dropdown</span>
+              <span class="text-xs px-2 py-0.5 rounded-md bg-blue-500/20 text-blue-400 font-mono">$run variable</span>
+            </div>
+            <p class="text-xs text-slate-400 mt-1">Template variable in dashboard allowing instant switching between historical experimental runs or viewing all runs.</p>
+            <div class="mt-2 text-xs text-slate-500 font-mono">SELECT id, run_name FROM runs_metadata</div>
+          </div>
+        </label>
+
+        <!-- Multi-panel Dashboard with Analytics -->
+        <label class="group relative flex items-start gap-3.5 bg-slate-900 border border-blue-500/40 rounded-xl p-4 cursor-pointer transition-all shadow-xs">
+          <input type="checkbox" id="item-panels_cluster" checked class="mt-1 h-4 w-4 rounded border-slate-700 text-blue-500 focus:ring-blue-400" onchange="updateProgress()">
+          <div class="flex-1">
+            <div class="flex items-center justify-between">
+              <span class="font-semibold text-sm text-blue-300">Analytics & Telemetry Panel Cluster</span>
+              <span class="text-xs px-2 py-0.5 rounded-md bg-blue-500/20 text-blue-400 font-mono">reactor-telemetry</span>
+            </div>
+            <p class="text-xs text-slate-400 mt-1">Thermal ramp curves (°C/min), dosing rate (g/min), cumulative energy stat sparkline (kWh), duty cycles (%), and raw temps.</p>
+            <div class="mt-2 text-xs text-slate-500 font-mono">Auto-refreshes every 5s • 7 live panels</div>
+          </div>
+        </label>
+      </div>
+    </div>
+
+    <!-- SECTION 4: SAFETY, WATCHDOGS & EMULATION -->
+    <div class="space-y-3" data-section="safety">
+      <div class="flex items-center gap-2">
+        <div class="w-3 h-3 rounded-full bg-purple-500"></div>
+        <h2 class="text-base font-bold text-white">Safety Watchdogs & Emulation Harness</h2>
+        <span class="text-xs text-purple-400 font-semibold ml-auto">75% VERIFIED</span>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <!-- Mega Firmware Watchdog -->
+        <label class="group relative flex items-start gap-3.5 bg-slate-900 border border-purple-500/40 rounded-xl p-4 cursor-pointer transition-all shadow-xs">
+          <input type="checkbox" id="item-mega_watchdog" checked class="mt-1 h-4 w-4 rounded border-slate-700 text-purple-500 focus:ring-purple-400" onchange="updateProgress()">
+          <div class="flex-1">
+            <div class="flex items-center justify-between">
+              <span class="font-semibold text-sm text-purple-300">Mega 2560 Dead-Man Watchdog</span>
+              <span class="text-xs px-2 py-0.5 rounded-md bg-purple-500/20 text-purple-400 font-mono">5000ms</span>
+            </div>
+            <p class="text-xs text-slate-400 mt-1">Safety check in checkSafety(): cuts all heater PWM outputs to 0 and trips to STANDBY if heartbeat drops.</p>
+            <div class="mt-2 text-xs text-emerald-400 font-medium">PlatformIO Build Verified (RAM: 18.4%)</div>
+          </div>
+        </label>
+
+        <!-- Uno Pump Watchdog -->
+        <label class="group relative flex items-start gap-3.5 bg-slate-900 border border-purple-500/40 rounded-xl p-4 cursor-pointer transition-all shadow-xs">
+          <input type="checkbox" id="item-uno_watchdog" checked class="mt-1 h-4 w-4 rounded border-slate-700 text-purple-500 focus:ring-purple-400" onchange="updateProgress()">
+          <div class="flex-1">
+            <div class="flex items-center justify-between">
+              <span class="font-semibold text-sm text-purple-300">Uno Pump Heartbeat Watchdog</span>
+              <span class="text-xs px-2 py-0.5 rounded-md bg-purple-500/20 text-purple-400 font-mono">5000ms</span>
+            </div>
+            <p class="text-xs text-slate-400 mt-1">Stops stepper motor motion immediately if supervisory communication drops.</p>
+            <div class="mt-2 text-xs text-emerald-400 font-medium">PlatformIO Build Verified (RAM: 23.9%)</div>
+          </div>
+        </label>
+
+        <!-- Software Emulation -->
+        <label class="group relative flex items-start gap-3.5 bg-slate-900 border border-purple-500/40 rounded-xl p-4 cursor-pointer transition-all shadow-xs">
+          <input type="checkbox" id="item-emulators" checked class="mt-1 h-4 w-4 rounded border-slate-700 text-purple-500 focus:ring-purple-400" onchange="updateProgress()">
+          <div class="flex-1">
+            <div class="flex items-center justify-between">
+              <span class="font-semibold text-sm text-purple-300">Dual Software Emulators</span>
+              <span class="text-xs px-2 py-0.5 rounded-md bg-purple-500/20 text-purple-400 font-mono">9999 & 9998</span>
+            </div>
+            <p class="text-xs text-slate-400 mt-1">Realistic thermal curves, dosing flow, and mass depletion active in background containers.</p>
+            <div class="mt-2 text-xs text-emerald-400 font-medium">Running Live on Pi</div>
+          </div>
+        </label>
+
+        <!-- Buzzer Relay -->
+        <label class="group relative flex items-start gap-3.5 bg-slate-900 border border-slate-800 rounded-xl p-4 cursor-pointer transition-all shadow-xs">
+          <input type="checkbox" id="item-buzzer_relay" class="mt-1 h-4 w-4 rounded border-slate-700 text-purple-500 focus:ring-purple-400" onchange="updateProgress()">
+          <div class="flex-1">
+            <div class="flex items-center justify-between">
+              <span class="font-semibold text-sm text-slate-300">Audible Siren Relay Driver</span>
+              <span class="text-xs px-2 py-0.5 rounded-md bg-slate-800 text-slate-400 font-mono">Pi GPIO 26</span>
+            </div>
+            <p class="text-xs text-slate-400 mt-1">Physical relay driver to sound audible horn on thermal alarm breach or sensor fault. (Mock relay active in dev container).</p>
+            <div class="mt-2 text-xs text-amber-400 font-medium">Pending Physical Wire Hookup</div>
+          </div>
+        </label>
+      </div>
+    </div>
+
+    <!-- SECTION 5: PHYSICAL HARDWARE PERIPHERALS -->
+    <div class="space-y-3" data-section="hardware">
+      <div class="flex items-center gap-2">
+        <div class="w-3 h-3 rounded-full bg-amber-500"></div>
+        <h2 class="text-base font-bold text-white">Physical Rig Hardware & Peripherals</h2>
+        <span class="text-xs text-amber-400 font-semibold ml-auto">0% (DEFERRED PER PLAN)</span>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <!-- RTD 0 -->
+        <label class="group relative flex items-start gap-3.5 bg-slate-900 border border-slate-800 hover:border-amber-500/40 rounded-xl p-4 cursor-pointer transition-all shadow-xs">
+          <input type="checkbox" id="item-temp_feed_pre" class="mt-1 h-4 w-4 rounded border-slate-700 text-amber-500 focus:ring-amber-400" onchange="updateProgress()">
+          <div class="flex-1">
+            <div class="flex items-center justify-between">
+              <span class="font-semibold text-sm text-slate-200">Preheater RTD PT100</span>
+              <span class="text-xs px-2 py-0.5 rounded-md bg-slate-800 text-slate-400 font-mono">Mega Pin 40</span>
+            </div>
+            <p class="text-xs text-slate-400 mt-1">PWFusion SEN-30203 Quad MAX31865 RTD0 channel.</p>
+          </div>
+        </label>
+
+        <!-- RTD 1 -->
+        <label class="group relative flex items-start gap-3.5 bg-slate-900 border border-slate-800 hover:border-amber-500/40 rounded-xl p-4 cursor-pointer transition-all shadow-xs">
+          <input type="checkbox" id="item-temp_liq_reac" class="mt-1 h-4 w-4 rounded border-slate-700 text-amber-500 focus:ring-amber-400" onchange="updateProgress()">
+          <div class="flex-1">
+            <div class="flex items-center justify-between">
+              <span class="font-semibold text-sm text-slate-200">Liquid Reactor RTD PT100</span>
+              <span class="text-xs px-2 py-0.5 rounded-md bg-slate-800 text-slate-400 font-mono">Mega Pin 42</span>
+            </div>
+            <p class="text-xs text-slate-400 mt-1">PWFusion SEN-30203 Quad MAX31865 RTD1 channel.</p>
+          </div>
+        </label>
+
+        <!-- RTD 2 -->
+        <label class="group relative flex items-start gap-3.5 bg-slate-900 border border-slate-800 hover:border-amber-500/40 rounded-xl p-4 cursor-pointer transition-all shadow-xs">
+          <input type="checkbox" id="item-temp_gas_reac_int" class="mt-1 h-4 w-4 rounded border-slate-700 text-amber-500 focus:ring-amber-400" onchange="updateProgress()">
+          <div class="flex-1">
+            <div class="flex items-center justify-between">
+              <span class="font-semibold text-sm text-slate-200">Gas Headspace RTD PT100</span>
+              <span class="text-xs px-2 py-0.5 rounded-md bg-slate-800 text-slate-400 font-mono">Mega Pin 44</span>
+            </div>
+            <p class="text-xs text-slate-400 mt-1">PWFusion SEN-30203 Quad MAX31865 RTD2 channel (70% gas weight).</p>
+          </div>
+        </label>
+
+        <!-- RTD 3 -->
+        <label class="group relative flex items-start gap-3.5 bg-slate-900 border border-slate-800 hover:border-amber-500/40 rounded-xl p-4 cursor-pointer transition-all shadow-xs">
+          <input type="checkbox" id="item-temp_gas_reac_ext" class="mt-1 h-4 w-4 rounded border-slate-700 text-amber-500 focus:ring-amber-400" onchange="updateProgress()">
+          <div class="flex-1">
+            <div class="flex items-center justify-between">
+              <span class="font-semibold text-sm text-slate-200">Gas Reactor Skin RTD PT100</span>
+              <span class="text-xs px-2 py-0.5 rounded-md bg-slate-800 text-slate-400 font-mono">Mega Pin 46</span>
+            </div>
+            <p class="text-xs text-slate-400 mt-1">PWFusion SEN-30203 Quad MAX31865 RTD3 channel (30% gas weight).</p>
+          </div>
+        </label>
+
+        <!-- TC 0 -->
+        <label class="group relative flex items-start gap-3.5 bg-slate-900 border border-slate-800 hover:border-amber-500/40 rounded-xl p-4 cursor-pointer transition-all shadow-xs">
+          <input type="checkbox" id="item-temp_feed_res" class="mt-1 h-4 w-4 rounded border-slate-700 text-amber-500 focus:ring-amber-400" onchange="updateProgress()">
+          <div class="flex-1">
+            <div class="flex items-center justify-between">
+              <span class="font-semibold text-sm text-slate-200">Feedstock Tank Thermocouple</span>
+              <span class="text-xs px-2 py-0.5 rounded-md bg-slate-800 text-slate-400 font-mono">Mega Pin 38</span>
+            </div>
+            <p class="text-xs text-slate-400 mt-1">K-type thermocouple with MAX31855 soft-SPI.</p>
+          </div>
+        </label>
+
+        <!-- HX711 -->
+        <label class="group relative flex items-start gap-3.5 bg-slate-900 border border-slate-800 hover:border-amber-500/40 rounded-xl p-4 cursor-pointer transition-all shadow-xs">
+          <input type="checkbox" id="item-weight_kg" class="mt-1 h-4 w-4 rounded border-slate-700 text-amber-500 focus:ring-amber-400" onchange="updateProgress()">
+          <div class="flex-1">
+            <div class="flex items-center justify-between">
+              <span class="font-semibold text-sm text-slate-200">HX711 Gravimetric Scale</span>
+              <span class="text-xs px-2 py-0.5 rounded-md bg-slate-800 text-slate-400 font-mono">Mega Pins 2, 3</span>
+            </div>
+            <p class="text-xs text-slate-400 mt-1">24-bit ADC load cell wiring and tare/calibration factor.</p>
+          </div>
+        </label>
+
+        <!-- MQ-8 -->
+        <label class="group relative flex items-start gap-3.5 bg-slate-900 border border-slate-800 hover:border-amber-500/40 rounded-xl p-4 cursor-pointer transition-all shadow-xs">
+          <input type="checkbox" id="item-h2_ppm" class="mt-1 h-4 w-4 rounded border-slate-700 text-amber-500 focus:ring-amber-400" onchange="updateProgress()">
+          <div class="flex-1">
+            <div class="flex items-center justify-between">
+              <span class="font-semibold text-sm text-slate-200">MQ-8 Hydrogen Gas Sensor</span>
+              <span class="text-xs px-2 py-0.5 rounded-md bg-slate-800 text-slate-400 font-mono">Mega Pin A0</span>
+            </div>
+            <p class="text-xs text-slate-400 mt-1">Analog PPM sensor calibration.</p>
+          </div>
+        </label>
+
+        <!-- TB6600 -->
+        <label class="group relative flex items-start gap-3.5 bg-slate-900 border border-slate-800 hover:border-amber-500/40 rounded-xl p-4 cursor-pointer transition-all shadow-xs">
+          <input type="checkbox" id="item-pump_stepper" class="mt-1 h-4 w-4 rounded border-slate-700 text-amber-500 focus:ring-amber-400" onchange="updateProgress()">
+          <div class="flex-1">
+            <div class="flex items-center justify-between">
+              <span class="font-semibold text-sm text-slate-200">TB6600 Peristaltic Pump Wiring</span>
+              <span class="text-xs px-2 py-0.5 rounded-md bg-slate-800 text-slate-400 font-mono">Uno Pins 8, 9, 10</span>
+            </div>
+            <p class="text-xs text-slate-400 mt-1">Wiring to TB6600 driver DIP switches (1000 steps/rev) and 12V/24V power.</p>
+          </div>
+        </label>
+      </div>
+    </div>
+
+  </div>
+
+  <script>
+    const ITEM_IDS = [
+      // Field Wi-Fi & Host Manager (4)
+      'item-wifi_hotspot',
+      'item-boot_failover',
+      'item-safe_reconnect',
+      'item-pi_settings_modal',
+      // Section 1: Storage Pipeline (4)
+      'item-sqlite_wal',
+      'item-run_partitioning',
+      'item-rollups',
+      'item-retention',
+      // Section 2: Process Analytics (4)
+      'item-thermal_ramps',
+      'item-dosing_rate',
+      'item-energy_tracking',
+      'item-analytics_api',
+      // Section 3: Grafana & Web (4)
+      'item-grafana_app',
+      'item-sqlite_datasource',
+      'item-run_selector',
+      'item-panels_cluster',
+      // Section 4: Safety & Watchdogs (4)
+      'item-mega_watchdog',
+      'item-uno_watchdog',
+      'item-emulators',
+      'item-buzzer_relay',
+      // Section 5: Physical Hardware (8)
+      'item-temp_feed_pre',
+      'item-temp_liq_reac',
+      'item-temp_gas_reac_int',
+      'item-temp_gas_reac_ext',
+      'item-temp_feed_res',
+      'item-weight_kg',
+      'item-h2_ppm',
+      'item-pump_stepper'
+    ];
+
+    function loadState() {
+      ITEM_IDS.forEach(id => {
+        const saved = localStorage.getItem('reactor_check_' + id);
+        const el = document.getElementById(id);
+        if (el && saved !== null) {
+          el.checked = saved === 'true';
+        }
+      });
+      updateProgress();
+    }
+
+    function updateProgress() {
+      let checkedCount = 0;
+      ITEM_IDS.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) {
+          if (el.checked) checkedCount++;
+          localStorage.setItem('reactor_check_' + id, el.checked);
+        }
+      });
+
+      const total = ITEM_IDS.length;
+      const pct = Math.round((checkedCount / total) * 100);
+
+      document.getElementById('progress-bar').style.width = pct + '%';
+      document.getElementById('progress-percent').textContent = pct + '%';
+      document.getElementById('progress-count').textContent = checkedCount + ' of ' + total + ' Complete';
+    }
+
+    function resetAllChecks() {
+      if (confirm("Reset checklist to default verified state?")) {
+        localStorage.clear();
+        location.reload();
+      }
+    }
+
+    function filterCards(category) {
+      document.querySelectorAll('.filter-btn').forEach(btn => {
+        btn.classList.remove('bg-blue-600', 'text-white');
+        btn.classList.add('bg-slate-800', 'text-slate-300');
+      });
+
+      const activeBtn = document.querySelector(`.filter-btn[data-filter="${category}"]`);
+      if (activeBtn) {
+        activeBtn.classList.remove('bg-slate-800', 'text-slate-300');
+        activeBtn.classList.add('bg-blue-600', 'text-white');
+      }
+
+      document.querySelectorAll('[data-section]').forEach(sec => {
+        if (category === 'all' || sec.getAttribute('data-section') === category) {
+          sec.style.display = 'block';
+        } else {
+          sec.style.display = 'none';
+        }
+      });
+    }
+
+    window.addEventListener('DOMContentLoaded', loadState);
+  </script>
+</body>
+</html>
