@@ -110,6 +110,7 @@ sudo systemctl enable --now reactor-system-manager.service
 * **Port 80 Captive Redirect**: When connected to `Reactor-Rig`, typing `10.42.0.1` into any browser automatically forwards you to the control panel at `:8000`—no need to remember port numbers!
 * **Smart Boot Failover**: At boot, the Pi waits 15 seconds to connect to known home/lab Wi-Fi. If none is found, it automatically starts broadcasting `Reactor-Rig`.
 * **Safe Reconnect Protection**: Inside the control panel, click **`📶 Pi Settings`** to scan and connect to local Wi-Fi. If connection fails or times out, the Pi **instantly falls back to `Reactor-Rig`** so you are never locked out.
+* **Built-in Host Shell & GPIO**: Under **`Pi Settings ➔ Host Shell & GPIO`**, run bash commands directly from your phone or browser, check Tailscale / Docker status, and test the GPIO 26 buzzer relay with one click.
 
 ---
 
