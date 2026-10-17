@@ -1,0 +1,22 @@
+{
+  "mcpServers": {
+    "reactor-controller": {
+      "command": "python3",
+      "args": [
+        "host/mcp/reactor_mcp_server.py"
+      ],
+      "env": {
+        "PYTHONUNBUFFERED": "1"
+      }
+    },
+    "grafana": {
+      "command": "uvx",
+      "args": [
+        "mcp-grafana"
+      ],
+      "env": {
+        "GRAFANA_URL": "http://100.69.0.69:3000"
+      }
+    }
+  }
+}
