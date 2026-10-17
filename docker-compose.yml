@@ -29,7 +29,7 @@ services:
       - GF_SECURITY_ALLOW_EMBEDDING=true
       - GF_AUTH_ANONYMOUS_ENABLED=true
       - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
-      - GF_INSTALL_PLUGINS=fr-ser-sqlite-datasource
+      - GF_INSTALL_PLUGINS=frser-sqlite-datasource
     volumes:
       - ./data:/data:ro
       - ./grafana/provisioning:/etc/grafana/provisioning:ro
