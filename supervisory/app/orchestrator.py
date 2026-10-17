@@ -1,3 +1,38 @@
+"""
+Central Reactor Supervisor & Orchestration Engine
+=================================================
+
+The Orchestrator is the central coordinator for the physical reactor hardware rig,
+managing real-time sensor processing, state machine transitions, thermal PID ramps,
+gravimetric dosing control, audible safety alarms, and high-concurrency database logging.
+
+State Machine Architecture:
+---------------------------
+- State 0 (STANDBY) : Default safe state. All solid-state relays (SSRs) forced to 0% duty cycle.
+                      Stepper pump disabled. Telemetry is continuously recorded at 1Hz.
+- State 1 (WARMUP)  : Preheats all thermal zones towards operator setpoints. Monitors temperature
+                      stability; once all zones are within ±5.0°C of setpoints for ≥5 seconds,
+                      automatically transitions to WORKING mode.
+- State 2 (WORKING) : Fully active reactor process state. Closed-loop PID temperature regulation,
+                      gravimetric automated reagent dosing, and real-time analytical rate estimation.
+
+Safety Interlocks & Failsafes:
+------------------------------
+1. Hardware Fault Isolation:
+   - Evaluates MAX31865 RTD error flags on every 1Hz cycle.
+   - If a persistent thermocouple/RTD fault occurs (>10s) or firmware reports an emergency error,
+     the system automatically transitions back to STANDBY (State 0) and sounds the audible alarm.
+2. Emergency Stop (E-STOP):
+   - Immediately cuts all heater PWM outputs, halts stepper rotation, opens safety relays,
+     and records an immutable timestamped error event.
+3. Audible Alarm Relay (GPIO 26):
+   - Drives physical 5V buzzer relay on Raspberry Pi GPIO 26 during out-of-bounds conditions,
+     with support for temporary operator silence intervals.
+4. Continuous 1Hz Telemetry:
+   - Ingests telemetry every second, computes live ramp rates (°C/min), mass dosing flow (g/min),
+     and cumulative kWh energy usage, streaming to SQLite and WebSocket subscribers.
+"""
+
 import asyncio
 from collections import deque
 from .serial_interface import serial_link
@@ -557,15 +592,13 @@ class Orchestrator:
             self.latest_state = data
             self.live_buffer.append(data)
             
-            # 3. Log to Database (Only during WARMUP or WORKING)
+            # 3. Log to Database (Record telemetry across all states including STANDBY)
             try:
                 uptime = data.get("uptime", 0)
                 state = data.get("state", 0)
                 
-                # State 1 = WARMUP, State 2 = WORKING
-                if state in [1, 2]:
-                    with SessionLocal() as db:
-                        create_log(db, data, uptime, state, run_id=self.active_run_id, analytics=analytics)
+                with SessionLocal() as db:
+                    create_log(db, data, uptime, state, run_id=self.active_run_id, analytics=analytics)
             except Exception as e:
                 logger.error(f"DB Log Error: {e}")
 

@@ -1,3 +1,32 @@
+"""
+Database CRUD Operations & Telemetry Aggregations
+==================================================
+
+Provides data access routines, analytical downsampling, time-series rollups,
+and persistent error tracking for the Reactor Controller supervisory system.
+
+Key Capabilities:
+-----------------
+1. High-Resolution Ingestion:
+   - `create_log`: Ingests 1-second raw telemetry (`Logs1s`) across all operating states
+     (STANDBY, WARMUP, WORKING) alongside derived analytical metrics.
+   - Automatically synchronizes the active run's last known setpoints and pump configuration.
+
+2. Adaptive Downsampling (`get_history_downsampled`):
+   - Dynamically selects optimal table source (`logs_1s`, `logs_1m`, `logs_10m`)
+     based on requested time horizon, avoiding excessive payloads over WebSockets or HTTP.
+   - Decimates points to match display resolution limits (default 300 points).
+
+3. Background Rollups & Retention Pruning:
+   - `perform_1m_rollup`: SQL aggregation aggregating 1-second data into 1-minute statistics.
+   - `perform_10m_rollup`: SQL aggregation aggregating 1-minute data into 10-minute long-term data.
+   - `prune_expired_logs`: Enforces sliding retention windows without blocking live transactions.
+
+4. Run Summary Analytics:
+   - `get_run_analytics_summary`: Computes aggregate thermal ranges, total reagent mass consumed,
+     cumulative electrical energy (kWh), average power (W), and error counts for completed or active runs.
+"""
+
 from sqlalchemy.orm import Session
 from sqlalchemy import text, func
 from .database import Logs1s, Logs1m, Logs10m, RunsMetadata, ErrorLog
@@ -5,6 +34,14 @@ from datetime import datetime, timedelta
 from typing import Optional
 
 def create_error_log(db: Session, sensor: str, exact_error: str) -> ErrorLog:
+    """
+    Log an active hardware or sensor fault to error_logs.
+    
+    :param db: Active SQLAlchemy database session.
+    :param sensor: Identifier of the failing sensor or subsystem (e.g. 't_liq_reac').
+    :param exact_error: Human-readable fault description or decoded MAX31865 bitmask string.
+    :return: Created ErrorLog record.
+    """
     log = ErrorLog(
         timestamp=datetime.utcnow(),
         sensor=sensor,
@@ -17,12 +54,25 @@ def create_error_log(db: Session, sensor: str, exact_error: str) -> ErrorLog:
     return log
 
 def resolve_error_log(db: Session, log_id: int):
+    """
+    Mark an active error log as resolved by recording the clearance timestamp.
+    
+    :param db: Active SQLAlchemy database session.
+    :param log_id: Primary key ID of the error log to resolve.
+    """
     log = db.query(ErrorLog).filter(ErrorLog.id == log_id).first()
     if log and log.cleared_timestamp is None:
         log.cleared_timestamp = datetime.utcnow()
         db.commit()
 
 def get_error_logs(db: Session, limit: int = 100):
+    """
+    Retrieve audit history of recent hardware and sensor faults.
+    
+    :param db: Active SQLAlchemy database session.
+    :param limit: Maximum number of records to return (ordered by newest first).
+    :return: List of dictionaries with fault status, timestamps, and active state.
+    """
     logs = db.query(ErrorLog).order_by(ErrorLog.id.desc()).limit(limit).all()
     result = []
     for log in logs:
@@ -37,6 +87,11 @@ def get_error_logs(db: Session, limit: int = 100):
     return result
 
 def update_last_run_config(db: Session, sp: dict, pump: dict):
+    """
+    Persist the latest operator setpoints and pump settings into runs_metadata.
+    Ensures that if the supervisory process or host SBC restarts, the operator's
+    configured target temperatures and dosing parameters are immediately recoverable.
+    """
     run_meta = db.query(RunsMetadata).order_by(RunsMetadata.id.desc()).first()
     if run_meta:
         if "feed_pre" in sp: run_meta.last_sp_feed_pre = float(sp.get("feed_pre") or 0.0)
@@ -53,6 +108,11 @@ def update_last_run_config(db: Session, sp: dict, pump: dict):
         db.commit()
 
 def create_log(db: Session, data: dict, uptime: float, state: int, run_id: int = 1, analytics: Optional[dict] = None):
+    """
+    Persist a 1-second telemetry snapshot into logs_1s.
+    Executed continuously across all states (STANDBY, WARMUP, WORKING) to guarantee
+    unbroken time series in SCADA dashboards.
+    """
     # Map dictionary keys (from JSON) to Model fields
     # JSON keys: t_gas, t_feed... -> Model: temp_gas, temp_feed...
     
@@ -99,6 +159,20 @@ def create_log(db: Session, data: dict, uptime: float, state: int, run_id: int =
     return db_log
 
 def get_history_downsampled(db: Session, hours: float, max_points: int = 300, run_id: Optional[int] = None):
+    """
+    Retrieve telemetry points decimated to fit frontend display limits.
+    
+    Dynamically routes queries to appropriate rollup tables:
+    - hours <= 1.0 : Queries `logs_1s` (raw 1-second data)
+    - hours <= 6.0 : Queries `logs_1m` (1-minute averages) with fallback to `logs_1s`
+    - hours > 6.0  : Queries `logs_10m` (10-minute rollups) with fallback
+    
+    :param db: Active SQLAlchemy database session.
+    :param hours: Time window lookback in hours (e.g. 0.5 for 30m, 24 for 1 day).
+    :param max_points: Maximum points to return after decimation (default: 300).
+    :param run_id: Optional experiment run ID filter.
+    :return: Chronologically sorted list of telemetry data dictionaries.
+    """
     cutoff = datetime.utcnow() - timedelta(hours=hours)
     
     # Select database table based on time horizon
@@ -171,9 +245,11 @@ def get_history_downsampled(db: Session, hours: float, max_points: int = 300, ru
         })
     return result
 
-from sqlalchemy import text
-
 def perform_1m_rollup(db: Session):
+    """
+    Execute incremental SQL aggregation from logs_1s to logs_1m.
+    Averages temperatures, duty cycles, dosing rates, and captures peak energy kWh.
+    """
     sql = text("""
         INSERT INTO logs_1m (
             run_id, timestamp, uptime, control_state, temp_feed_res, temp_feed_pre, temp_liq_reac,
@@ -197,6 +273,10 @@ def perform_1m_rollup(db: Session):
     db.commit()
 
 def perform_10m_rollup(db: Session):
+    """
+    Execute incremental SQL aggregation from logs_1m to logs_10m.
+    Compresses 1-minute historical data into 10-minute buckets for long-term archiving.
+    """
     sql = text("""
         INSERT INTO logs_10m (
             run_id, timestamp, uptime, control_state, temp_feed_res, temp_feed_pre, temp_liq_reac,
@@ -220,6 +300,13 @@ def perform_10m_rollup(db: Session):
     db.commit()
 
 def prune_expired_logs(db: Session, raw_retention_hours: float = 0.0, rollup_1m_retention_hours: float = 0.0):
+    """
+    Purge expired raw logs according to sliding window retention policies.
+    
+    :param db: Active SQLAlchemy database session.
+    :param raw_retention_hours: Hours of raw logs_1s to retain (e.g. 24.0).
+    :param rollup_1m_retention_hours: Hours of logs_1m to retain (e.g. 720.0 for 30 days).
+    """
     if raw_retention_hours > 0:
         raw_cutoff = datetime.utcnow() - timedelta(hours=raw_retention_hours)
         db.query(Logs1s).filter(Logs1s.timestamp < raw_cutoff).delete()
@@ -230,8 +317,22 @@ def prune_expired_logs(db: Session, raw_retention_hours: float = 0.0, rollup_1m_
         db.commit()
 
 def get_run_analytics_summary(db: Session, run_id: int):
+    """
+    Calculate post-run and in-flight analytical KPIs for a given experimental run.
+    
+    Extracts:
+    - Min, max, and avg temperatures and peak ramp rates (°C/min) across all 3 zones.
+    - Reagent balance mass consumed (kg) and gravimetric dosing rate (g/min).
+    - Cumulative electrical power consumption (kWh) and average power draw (Watts).
+    - Total safety alarm trip count.
+    
+    :param db: Active SQLAlchemy database session.
+    :param run_id: Primary key of run in runs_metadata.
+    :return: Dictionary containing structured analytical metrics, or None if run not found.
+    """
     run = db.query(RunsMetadata).filter(RunsMetadata.id == run_id).first()
     if not run:
+        return None
         return None
 
     end_ts = run.end_time or datetime.utcnow()

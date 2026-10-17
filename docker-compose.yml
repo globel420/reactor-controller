@@ -15,6 +15,7 @@ services:
       - PUMP_PORT=${PUMP_PORT:-socket://pump_emulator:9998}
     volumes:
       - ./data:/app/data
+      - ./supervisory:/app/supervisory
     restart: unless-stopped
     depends_on:
       - sensor_emulator

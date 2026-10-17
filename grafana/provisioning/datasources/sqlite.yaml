@@ -3,6 +3,7 @@ apiVersion: 1
 datasources:
   - name: Reactor-SQLite
     type: frser-sqlite-datasource
+    uid: Reactor-SQLite
     access: proxy
     isDefault: true
     jsonData:
