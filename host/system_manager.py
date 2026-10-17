@@ -197,7 +197,12 @@ def get_system_metrics():
     db_path = "/home/pi/reactor-controller/data/reactor_logs.db"
     try:
         if os.path.exists(db_path):
-            db_size_mb = round(os.path.getsize(db_path) / (1024 * 1024), 2)
+            total_bytes = os.path.getsize(db_path)
+            for extra in ["-wal", "-shm"]:
+                extra_p = db_path + extra
+                if os.path.exists(extra_p):
+                    total_bytes += os.path.getsize(extra_p)
+            db_size_mb = round(total_bytes / (1024 * 1024), 2)
     except Exception:
         pass
 
