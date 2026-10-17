@@ -337,6 +337,30 @@ class ApiHandler(http.server.BaseHTTPRequestHandler):
                     "returncode": 1
                 })
 
+        elif path == "/api/system/password":
+            new_pw = req_data.get("password", "").strip()
+            if not new_pw:
+                self._send_json({"status": "error", "message": "Password cannot be empty"}, code=400)
+                return
+            if len(new_pw) < 4:
+                self._send_json({"status": "error", "message": "Password must be at least 4 characters long"}, code=400)
+                return
+            try:
+                chpasswd_bin = "/usr/sbin/chpasswd" if os.path.exists("/usr/sbin/chpasswd") else "chpasswd"
+                res = subprocess.run(
+                    [chpasswd_bin],
+                    input=f"pi:{new_pw}".encode("utf-8"),
+                    capture_output=True,
+                    timeout=10
+                )
+                if res.returncode == 0:
+                    self._send_json({"status": "ok", "message": "Password for user 'pi' updated successfully!"})
+                else:
+                    err = res.stderr.decode("utf-8").strip() or "Failed to change password"
+                    self._send_json({"status": "error", "message": err}, code=500)
+            except Exception as e:
+                self._send_json({"status": "error", "message": str(e)}, code=500)
+
         else:
             self._send_json({"error": "Not Found"}, code=404)
 

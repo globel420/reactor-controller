@@ -297,6 +297,8 @@ def forward_to_host(method: str, path: str, data: Optional[dict] = None) -> dict
         elif path == "/api/system/exec":
             cmd = data.get("command", "") if data else ""
             return {"command": cmd, "stdout": f"Mock output for '{cmd}': Host daemon is not connected.", "stderr": "", "returncode": 0}
+        elif path == "/api/system/password":
+            return {"status": "ok", "message": "Mock: Password updated successfully."}
         raise HTTPException(status_code=502, detail=f"Host manager communication error: {e}")
 
 @app.get("/api/system/status")
@@ -330,6 +332,10 @@ async def api_system_restart_services():
 @app.post("/api/system/exec")
 async def api_system_exec(req: dict):
     return forward_to_host("POST", "/api/system/exec", data=req)
+
+@app.post("/api/system/password")
+async def api_system_password(req: dict):
+    return forward_to_host("POST", "/api/system/password", data=req)
 
 # --- WebSocket ---
 
