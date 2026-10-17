@@ -294,6 +294,9 @@ def forward_to_host(method: str, path: str, data: Optional[dict] = None) -> dict
             ]
         elif path == "/api/wifi/status":
             return {"mode": "hotspot", "ssid": "Reactor-Rig", "state": "connected", "ip": "10.42.0.1"}
+        elif path == "/api/system/exec":
+            cmd = data.get("command", "") if data else ""
+            return {"command": cmd, "stdout": f"Mock output for '{cmd}': Host daemon is not connected.", "stderr": "", "returncode": 0}
         raise HTTPException(status_code=502, detail=f"Host manager communication error: {e}")
 
 @app.get("/api/system/status")
@@ -323,6 +326,10 @@ async def api_system_reboot():
 @app.post("/api/system/restart-services")
 async def api_system_restart_services():
     return forward_to_host("POST", "/api/system/restart-services")
+
+@app.post("/api/system/exec")
+async def api_system_exec(req: dict):
+    return forward_to_host("POST", "/api/system/exec", data=req)
 
 # --- WebSocket ---
 

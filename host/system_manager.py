@@ -289,6 +289,54 @@ class ApiHandler(http.server.BaseHTTPRequestHandler):
             threading.Thread(target=_restart, daemon=True).start()
             self._send_json({"status": "ok", "message": "Service restart initiated"})
 
+        elif path == "/api/system/exec":
+            cmd = req_data.get("command", "").strip()
+            if not cmd:
+                self._send_json({"status": "error", "message": "Command required"}, code=400)
+                return
+            try:
+                # Buzzer test helper
+                if cmd == "test-buzzer":
+                    subprocess.run(["pinctrl", "set", "26", "op", "dh"], capture_output=True)
+                    time.sleep(1.5)
+                    subprocess.run(["pinctrl", "set", "26", "op", "dl"], capture_output=True)
+                    self._send_json({
+                        "command": "pinctrl set 26 op dh (1.5s pulse)",
+                        "stdout": "Buzzer siren relay on GPIO 26 activated for 1.5 seconds.",
+                        "stderr": "",
+                        "returncode": 0
+                    })
+                    return
+
+                res = subprocess.run(
+                    cmd,
+                    shell=True,
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                    cwd="/home/pi/reactor-controller"
+                )
+                self._send_json({
+                    "command": cmd,
+                    "stdout": res.stdout,
+                    "stderr": res.stderr,
+                    "returncode": res.returncode
+                })
+            except subprocess.TimeoutExpired:
+                self._send_json({
+                    "command": cmd,
+                    "stdout": "",
+                    "stderr": "Command timed out after 30 seconds",
+                    "returncode": 124
+                })
+            except Exception as e:
+                self._send_json({
+                    "command": cmd,
+                    "stdout": "",
+                    "stderr": str(e),
+                    "returncode": 1
+                })
+
         else:
             self._send_json({"error": "Not Found"}, code=404)
 

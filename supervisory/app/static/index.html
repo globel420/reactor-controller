@@ -926,6 +926,63 @@
             const [actionMsg, setActionMsg] = useState("");
             const [actionErr, setActionErr] = useState("");
 
+            // Host Shell State
+            const [cmdInput, setCmdInput] = useState("");
+            const [cmdLogs, setCmdLogs] = useState([
+                {
+                    command: "system-ready",
+                    stdout: "Host Shell Ready. Run diagnostic commands, inspect docker containers, or test hardware GPIO.\nBuilt-in: pinctrl, tailscale, docker, ip, vcgencmd.",
+                    stderr: "",
+                    returncode: 0,
+                    time: new Date().toLocaleTimeString()
+                }
+            ]);
+            const [executing, setExecuting] = useState(false);
+            const terminalEndRef = useRef(null);
+
+            useEffect(() => {
+                if (tab === "terminal" && terminalEndRef.current) {
+                    terminalEndRef.current.scrollIntoView({ behavior: "smooth" });
+                }
+            }, [cmdLogs, tab]);
+
+            const handleExecCommand = async (cmdToRun) => {
+                const cmd = (cmdToRun !== undefined ? cmdToRun : cmdInput).trim();
+                if (!cmd) return;
+                if (cmd.toLowerCase() === "clear") {
+                    setCmdLogs([]);
+                    setCmdInput("");
+                    return;
+                }
+                setExecuting(true);
+                setCmdInput("");
+                try {
+                    const res = await fetch('/api/system/exec', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ command: cmd })
+                    });
+                    const data = await res.json();
+                    setCmdLogs(prev => [...prev, {
+                        command: data.command || cmd,
+                        stdout: data.stdout || "",
+                        stderr: data.stderr || "",
+                        returncode: data.returncode ?? 0,
+                        time: new Date().toLocaleTimeString()
+                    }]);
+                } catch (err) {
+                    setCmdLogs(prev => [...prev, {
+                        command: cmd,
+                        stdout: "",
+                        stderr: "Execution error: " + err.message,
+                        returncode: 1,
+                        time: new Date().toLocaleTimeString()
+                    }]);
+                } finally {
+                    setExecuting(false);
+                }
+            };
+
             const fetchStatus = async () => {
                 setLoadingStatus(true);
                 try {
@@ -1064,6 +1121,13 @@
                             >
                                 <span>⚙️</span>
                                 <span>Host Health & Maintenance</span>
+                            </button>
+                            <button 
+                                onClick={() => setTab("terminal")} 
+                                className={`px-4 py-2 rounded-lg font-bold text-sm transition-all flex items-center gap-2 ${tab === 'terminal' ? 'bg-blue-600 text-white shadow' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'}`}
+                            >
+                                <span>💻</span>
+                                <span>Host Shell & GPIO</span>
                             </button>
                         </div>
 
@@ -1308,6 +1372,134 @@
                                         </button>
                                     </div>
                                 </div>
+                            </div>
+                        )}
+
+                        {/* TAB 3: Host Shell & GPIO Control */}
+                        {tab === "terminal" && (
+                            <div className="flex flex-col gap-3">
+                                {/* Header / Quick Actions */}
+                                <div className="bg-gray-900 p-3 rounded-xl border border-gray-700 flex flex-col gap-2">
+                                    <div className="flex justify-between items-center">
+                                        <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">Quick Actions & Hardware Tests</span>
+                                        <button 
+                                            onClick={() => handleExecCommand("clear")}
+                                            className="text-xs text-gray-400 hover:text-white hover:underline"
+                                        >
+                                            Clear Screen
+                                        </button>
+                                    </div>
+                                    <div className="flex flex-wrap gap-1.5">
+                                        <button 
+                                            onClick={() => handleExecCommand("test-buzzer")}
+                                            disabled={executing}
+                                            className="px-2.5 py-1 bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold rounded shadow transition-all flex items-center gap-1"
+                                        >
+                                            <span>🔊</span>
+                                            <span>Test Buzzer (GPIO 26)</span>
+                                        </button>
+                                        <button 
+                                            onClick={() => handleExecCommand("pinctrl get 26")}
+                                            disabled={executing}
+                                            className="px-2.5 py-1 bg-gray-800 hover:bg-gray-700 text-blue-300 text-xs font-mono rounded border border-gray-600 transition-all"
+                                        >
+                                            pinctrl get 26
+                                        </button>
+                                        <button 
+                                            onClick={() => handleExecCommand("tailscale status")}
+                                            disabled={executing}
+                                            className="px-2.5 py-1 bg-gray-800 hover:bg-gray-700 text-purple-300 text-xs font-mono rounded border border-gray-600 transition-all"
+                                        >
+                                            tailscale status
+                                        </button>
+                                        <button 
+                                            onClick={() => handleExecCommand("docker compose ps")}
+                                            disabled={executing}
+                                            className="px-2.5 py-1 bg-gray-800 hover:bg-gray-700 text-green-300 text-xs font-mono rounded border border-gray-600 transition-all"
+                                        >
+                                            docker compose ps
+                                        </button>
+                                        <button 
+                                            onClick={() => handleExecCommand("docker compose logs --tail=30 supervisory")}
+                                            disabled={executing}
+                                            className="px-2.5 py-1 bg-gray-800 hover:bg-gray-700 text-gray-300 text-xs font-mono rounded border border-gray-600 transition-all"
+                                        >
+                                            supervisory logs
+                                        </button>
+                                        <button 
+                                            onClick={() => handleExecCommand("ip -br addr")}
+                                            disabled={executing}
+                                            className="px-2.5 py-1 bg-gray-800 hover:bg-gray-700 text-teal-300 text-xs font-mono rounded border border-gray-600 transition-all"
+                                        >
+                                            ip -br addr
+                                        </button>
+                                        <button 
+                                            onClick={() => handleExecCommand("free -h && df -h /")}
+                                            disabled={executing}
+                                            className="px-2.5 py-1 bg-gray-800 hover:bg-gray-700 text-gray-300 text-xs font-mono rounded border border-gray-600 transition-all"
+                                        >
+                                            free & df
+                                        </button>
+                                        <button 
+                                            onClick={() => handleExecCommand("vcgencmd measure_temp 2>/dev/null || cat /sys/class/thermal/thermal_zone0/temp")}
+                                            disabled={executing}
+                                            className="px-2.5 py-1 bg-gray-800 hover:bg-gray-700 text-yellow-300 text-xs font-mono rounded border border-gray-600 transition-all"
+                                        >
+                                            measure_temp
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {/* Terminal Screen */}
+                                <div className="bg-slate-950 font-mono text-xs text-green-400 p-3.5 rounded-xl border border-gray-700 overflow-y-auto h-72 shadow-inner select-text flex flex-col gap-2.5">
+                                    {cmdLogs.map((log, idx) => (
+                                        <div key={idx} className="flex flex-col gap-0.5">
+                                            <div className="flex items-center gap-2 text-slate-400 text-[11px] border-b border-slate-900 pb-0.5">
+                                                <span className="text-gray-500">[{log.time}]</span>
+                                                <span className="text-blue-400 font-bold">pi@reactor:~$</span>
+                                                <span className="text-white font-semibold">{log.command}</span>
+                                                {log.returncode !== 0 && (
+                                                    <span className="text-red-400 text-[10px] bg-red-950/80 px-1 rounded ml-auto">
+                                                        exit {log.returncode}
+                                                    </span>
+                                                )}
+                                            </div>
+                                            {log.stdout && <pre className="whitespace-pre-wrap text-emerald-300 font-mono text-xs leading-relaxed">{log.stdout}</pre>}
+                                            {log.stderr && <pre className="whitespace-pre-wrap text-red-400 font-mono text-xs leading-relaxed">{log.stderr}</pre>}
+                                        </div>
+                                    ))}
+                                    {executing && (
+                                        <div className="flex items-center gap-2 text-yellow-400 text-xs animate-pulse">
+                                            <span>⏳</span>
+                                            <span>Executing command on host...</span>
+                                        </div>
+                                    )}
+                                    <div ref={terminalEndRef} />
+                                </div>
+
+                                {/* Command Input Form */}
+                                <form onSubmit={(e) => { e.preventDefault(); handleExecCommand(); }} className="flex gap-2">
+                                    <div className="relative flex-1 flex items-center bg-gray-900 border border-gray-600 rounded-lg overflow-hidden focus-within:border-blue-500">
+                                        <span className="font-mono text-xs text-blue-400 font-bold pl-3 pr-1 select-none">
+                                            pi@reactor:~$
+                                        </span>
+                                        <input 
+                                            type="text" 
+                                            value={cmdInput} 
+                                            onChange={e => setCmdInput(e.target.value)}
+                                            placeholder="Type bash command (e.g. pinctrl get 26, tailscale status)..."
+                                            disabled={executing}
+                                            className="w-full bg-transparent text-white font-mono text-xs p-2.5 outline-none"
+                                        />
+                                    </div>
+                                    <button 
+                                        type="submit" 
+                                        disabled={executing || !cmdInput.trim()}
+                                        className="px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white rounded-lg text-xs font-bold transition-all shadow"
+                                    >
+                                        {executing ? "Running..." : "Run"}
+                                    </button>
+                                </form>
                             </div>
                         )}
 
