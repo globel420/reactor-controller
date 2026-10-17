@@ -1,0 +1,15 @@
+[Unit]
+Description=Reactor Controller System & Network Manager Daemon
+After=network.target NetworkManager.service
+Wants=NetworkManager.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/home/pi/reactor-controller
+ExecStart=/usr/bin/python3 /home/pi/reactor-controller/host/system_manager.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
