@@ -61,7 +61,7 @@
       "targets": [
         {
           "queryType": "table",
-          "rawSql": "SELECT state AS \"State\" FROM logs_1s WHERE ('$run' = '$__all' OR run_id = '$run') ORDER BY timestamp DESC LIMIT 1",
+          "rawSql": "SELECT CASE control_state WHEN 0 THEN 'STANDBY' WHEN 1 THEN 'WARMUP' WHEN 2 THEN 'WORKING' ELSE 'UNKNOWN' END AS \"State\" FROM logs_1s WHERE ('$run' = '$__all' OR run_id = '$run') ORDER BY timestamp DESC LIMIT 1",
           "refId": "A"
         }
       ]
@@ -242,7 +242,7 @@
       "targets": [
         {
           "queryType": "table",
-          "rawSql": "SELECT timestamp AS time, cumulative_energy_kwh AS \"Energy (kWh)\" FROM logs_1s WHERE ('$run' = '$__all' OR run_id = '$run') ORDER BY timestamp ASC",
+          "rawSql": "SELECT timestamp AS time, energy_kwh AS \"Energy (kWh)\" FROM logs_1s WHERE ('$run' = '$__all' OR run_id = '$run') ORDER BY timestamp ASC",
           "refId": "A"
         }
       ]
@@ -358,7 +358,7 @@
       "targets": [
         {
           "queryType": "table",
-          "rawSql": "SELECT timestamp AS time, weight_kg AS \"Tank Weight\" FROM logs_1s WHERE ('$run' = '$__all' OR run_id = '$run') ORDER BY timestamp ASC",
+          "rawSql": "SELECT timestamp AS time, weight AS \"Tank Weight (g)\" FROM logs_1s WHERE ('$run' = '$__all' OR run_id = '$run') ORDER BY timestamp ASC",
           "refId": "A"
         }
       ]
@@ -401,7 +401,7 @@
       "targets": [
         {
           "queryType": "table",
-          "rawSql": "SELECT timestamp AS time, ROUND(pwm_feed_pre * 100.0 / 255.0, 1) AS \"Preheater PWM\", ROUND(pwm_liq_reac * 100.0 / 255.0, 1) AS \"Liquid Core PWM\", ROUND(pwm_gas_reac * 100.0 / 255.0, 1) AS \"Gas Core PWM\" FROM logs_1s WHERE ('$run' = '$__all' OR run_id = '$run') ORDER BY timestamp ASC",
+          "rawSql": "SELECT timestamp AS time, ROUND(heater_feed_pre, 1) AS \"Preheater PWM\", ROUND(heater_liq_reac, 1) AS \"Liquid Core PWM\", ROUND(heater_gas_reac, 1) AS \"Gas Core PWM\" FROM logs_1s WHERE ('$run' = '$__all' OR run_id = '$run') ORDER BY timestamp ASC",
           "refId": "A"
         }
       ]
@@ -453,7 +453,7 @@
       "targets": [
         {
           "queryType": "table",
-          "rawSql": "SELECT timestamp AS \"Time\", zone AS \"Zone\", alarm_type AS \"Type\", ROUND(reading, 1) AS \"Reading\", target AS \"Target\", cleared_timestamp AS \"Cleared\" FROM alarms ORDER BY timestamp DESC LIMIT 20",
+          "rawSql": "SELECT timestamp AS \"Time\", sensor AS \"Sensor\", exact_error AS \"Error Details\", cleared_timestamp AS \"Cleared\" FROM error_logs ORDER BY timestamp DESC LIMIT 20",
           "refId": "A"
         }
       ]
