@@ -6,27 +6,75 @@
 // --- Communications ---
 #define SERIAL_BAUD 115200
 
-// --- SPI Bus (Temperature Sensors) ---
-// Software SPI on Pins 7 (CLK) and 5 (MISO) for remaining MAX31855 Thermocouples (Mega Pin 50/52 bypass)
-#ifdef PIN_SPI_SCK
-#undef PIN_SPI_SCK
+// Build-time overrides are loaded from the repository root .env by PlatformIO.
+// The defaults below preserve the established development wiring.
+#ifndef MEGA_PIN_SPI_SCK
+#define MEGA_PIN_SPI_SCK 7
 #endif
-#define PIN_SPI_SCK 7
+#ifndef MEGA_PIN_SPI_MISO
+#define MEGA_PIN_SPI_MISO 5
+#endif
+#ifndef MEGA_PIN_TC_FEED_RES
+#define MEGA_PIN_TC_FEED_RES 38
+#endif
+#ifndef MEGA_PIN_TC_HOUSING
+#define MEGA_PIN_TC_HOUSING 36
+#endif
+#ifndef MEGA_PIN_RTD_PREHEATER
+#define MEGA_PIN_RTD_PREHEATER 40
+#endif
+#ifndef MEGA_PIN_RTD_LIQUID
+#define MEGA_PIN_RTD_LIQUID 42
+#endif
+#ifndef MEGA_PIN_RTD_GAS_INT
+#define MEGA_PIN_RTD_GAS_INT 44
+#endif
+#ifndef MEGA_PIN_RTD_GAS_EXT
+#define MEGA_PIN_RTD_GAS_EXT 46
+#endif
+#ifndef MEGA_PIN_H2_SENSOR
+#define MEGA_PIN_H2_SENSOR A0
+#endif
+#ifndef MEGA_PIN_HX711_SCK
+#define MEGA_PIN_HX711_SCK 2
+#endif
+#ifndef MEGA_PIN_HX711_DT
+#define MEGA_PIN_HX711_DT 3
+#endif
+#ifndef MEGA_PIN_HEATER_PREHEATER
+#define MEGA_PIN_HEATER_PREHEATER 6
+#endif
+#ifndef MEGA_PIN_HEATER_LIQUID
+#define MEGA_PIN_HEATER_LIQUID 8
+#endif
+#ifndef MEGA_PIN_HEATER_GAS
+#define MEGA_PIN_HEATER_GAS 9
+#endif
+#ifndef MCU_HEARTBEAT_TIMEOUT_MS
+#define MCU_HEARTBEAT_TIMEOUT_MS 3000
+#endif
+#ifndef REACTOR_CONFIG_HASH
+#define REACTOR_CONFIG_HASH 0UL
+#endif
 
-#ifdef PIN_SPI_MISO
-#undef PIN_SPI_MISO
+#if MCU_HEARTBEAT_TIMEOUT_MS != 3000
+#error "MCU_HEARTBEAT_TIMEOUT_MS must be exactly 3000"
 #endif
-#define PIN_SPI_MISO 5
+
+// --- SPI Bus (Temperature Sensors) ---
+// Software SPI for remaining MAX31855 thermocouples (Mega Pin 50/52 bypass).
+#define PIN_TC_SOFT_SCK MEGA_PIN_SPI_SCK
+#define PIN_TC_SOFT_MISO MEGA_PIN_SPI_MISO
 
 // Thermocouple Channels (MAX31855)
-#define PIN_SPI_CS_TC_FEEDSTOCK_RESERVOIR 38 // Feedstock reservoir
-#define PIN_SPI_CS_TC_ELECTRONICS_HOUSING 36 // Electronics housing temperature monitor
+#define PIN_SPI_CS_TC_FEEDSTOCK_RESERVOIR MEGA_PIN_TC_FEED_RES
+#define PIN_SPI_CS_TC_ELECTRONICS_HOUSING MEGA_PIN_TC_HOUSING
 
 // RTD Channels (PWFusion SEN-30203 Quad MAX31865 PT100)
-#define PIN_SPI_CS_RTD_FEEDSTOCK_PREHEATER 40  // External feedstock preheater (RTD0)
-#define PIN_SPI_CS_RTD_LIQUID_REACTOR      42  // Internal liquid phase reactor (RTD1)
-#define PIN_SPI_CS_RTD_GAS_REACTOR_INT     44  // Internal gas phase reactor (RTD2)
-#define PIN_SPI_CS_RTD_GAS_REACTOR_EXT     46  // External gas phase reactor (RTD3)
+#define PIN_SPI_CS_RTD_FEEDSTOCK_PREHEATER MEGA_PIN_RTD_PREHEATER
+#define PIN_SPI_CS_RTD_LIQUID_REACTOR      MEGA_PIN_RTD_LIQUID
+#define PIN_SPI_CS_RTD_GAS_REACTOR_INT     MEGA_PIN_RTD_GAS_INT
+#define PIN_SPI_CS_RTD_GAS_REACTOR_EXT     MEGA_PIN_RTD_GAS_EXT
 
 // Backward-compatible alias definitions
 #define PIN_SPI_CS_RTD_PREHEATER     PIN_SPI_CS_RTD_FEEDSTOCK_PREHEATER
@@ -38,11 +86,11 @@
 #define PIN_SPI_CS_TC_GAS_REACTOR_INT PIN_SPI_CS_RTD_GAS_REACTOR_INT
 #define PIN_SPI_CS_TC_GAS_REACTOR_EXT PIN_SPI_CS_RTD_GAS_REACTOR_EXT
 // --- Analog Inputs ---
-#define PIN_H2_SENSOR A0 // MQ-8 Hydrogen Sensor (Analog Out)
+#define PIN_H2_SENSOR MEGA_PIN_H2_SENSOR
 
 // --- Load Cell (HX711) ---
-#define PIN_HX711_SCK 2
-#define PIN_HX711_DT 3
+#define PIN_HX711_SCK MEGA_PIN_HX711_SCK
+#define PIN_HX711_DT MEGA_PIN_HX711_DT
 
 // --- Stepper Motors (Modbus TTL) ---
 #define STEPPER_ADDR_FEEDSTOCK 1
@@ -58,14 +106,14 @@
 #define H2_MAX_PERCENT 100.0
 
 // --- Actuators (Heaters - SSRs) ---
-#define PIN_HEATER_FEEDSTOCK_PREHEATER 6 // PWM capable
-#define PIN_HEATER_LIQUID_REACTOR 8      // PWM capable
-#define PIN_HEATER_GAS_REACTOR 9         // PWM capable
+#define PIN_HEATER_FEEDSTOCK_PREHEATER MEGA_PIN_HEATER_PREHEATER
+#define PIN_HEATER_LIQUID_REACTOR MEGA_PIN_HEATER_LIQUID
+#define PIN_HEATER_GAS_REACTOR MEGA_PIN_HEATER_GAS
 
 // --- Safety Limits ---
 #define MAX_TEMP_C_PREHEATER 300.0
-#define MAX_TEMP_C_LIQUID_REACTOR 500.0
-#define MAX_TEMP_C_GAS_REACTOR 800.0
+#define MAX_TEMP_C_LIQUID_REACTOR 300.0
+#define MAX_TEMP_C_GAS_REACTOR 300.0
 #define MAX_TEMP_C_HOUSING 90.0
 
 // --- Control Loop ---

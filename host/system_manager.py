@@ -20,6 +20,42 @@ from urllib.parse import parse_qs, urlparse
 
 API_PORT = 8001
 REDIRECT_PORT = 80
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+BUZZER_PIN = int(os.getenv("PI_BUZZER_GPIO", "26"))
+_safety_latch_path = os.getenv(
+    "HOST_SAFETY_LATCH_FILE", "data/hardware/safety_latched"
+)
+SAFETY_LATCH_FILE = (
+    _safety_latch_path
+    if os.path.isabs(_safety_latch_path)
+    else os.path.join(BASE_DIR, _safety_latch_path)
+)
+BUZZER_LOCK = threading.Lock()
+
+
+def set_buzzer(active: bool):
+    """Single authoritative GPIO writer for safety and browser buzzer tests."""
+    with BUZZER_LOCK:
+        if not active and os.path.exists(SAFETY_LATCH_FILE):
+            return {
+                "status": "error",
+                "active": True,
+                "gpio": BUZZER_PIN,
+                "message": "Safety latch requires the buzzer to remain active",
+            }
+        level = "dh" if active else "dl"
+        result = subprocess.run(
+            ["pinctrl", "set", str(BUZZER_PIN), "op", level],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        return {
+            "status": "ok" if result.returncode == 0 else "error",
+            "active": bool(active) if result.returncode == 0 else None,
+            "gpio": BUZZER_PIN,
+            "message": result.stderr.strip() if result.returncode else "buzzer updated",
+        }
 
 
 def get_wifi_status():
@@ -194,7 +230,10 @@ def get_system_metrics():
 
     # DB Size
     db_size_mb = 0.0
-    db_path = "/home/pi/reactor-controller/data/reactor_logs.db"
+    data_profile = (
+        "hardware" if os.getenv("COMPOSE_PROFILES") == "hardware" else "simulation"
+    )
+    db_path = os.path.join(BASE_DIR, "data", data_profile, "reactor_logs.db")
     try:
         if os.path.exists(db_path):
             total_bytes = os.path.getsize(db_path)
@@ -285,9 +324,21 @@ class ApiHandler(http.server.BaseHTTPRequestHandler):
         elif path == "/api/system/restart-services":
             def _restart():
                 time.sleep(1)
-                subprocess.run(["docker", "compose", "-f", "/home/pi/reactor-controller/docker-compose.yml", "restart"])
+                compose_file = os.path.join(BASE_DIR, "docker-compose.yml")
+                subprocess.run(["docker", "compose", "-f", compose_file, "restart"])
             threading.Thread(target=_restart, daemon=True).start()
             self._send_json({"status": "ok", "message": "Service restart initiated"})
+
+        elif path == "/api/system/buzzer":
+            active = req_data.get("active")
+            if not isinstance(active, bool):
+                self._send_json(
+                    {"status": "error", "message": "active must be boolean"},
+                    code=400,
+                )
+                return
+            result = set_buzzer(active)
+            self._send_json(result, code=200 if result["status"] == "ok" else 409)
 
         elif path == "/api/system/exec":
             cmd = req_data.get("command", "").strip()
@@ -297,12 +348,18 @@ class ApiHandler(http.server.BaseHTTPRequestHandler):
             try:
                 # Buzzer test helper
                 if cmd == "test-buzzer":
-                    subprocess.run(["pinctrl", "set", "26", "op", "dh"], capture_output=True)
-                    time.sleep(1.5)
-                    subprocess.run(["pinctrl", "set", "26", "op", "dl"], capture_output=True)
+                    with BUZZER_LOCK:
+                        subprocess.run(["pinctrl", "set", str(BUZZER_PIN), "op", "dh"], capture_output=True)
+                        time.sleep(1.5)
+                        safety_demanded = os.path.exists(SAFETY_LATCH_FILE)
+                        if not safety_demanded:
+                            subprocess.run(["pinctrl", "set", str(BUZZER_PIN), "op", "dl"], capture_output=True)
                     self._send_json({
-                        "command": "pinctrl set 26 op dh (1.5s pulse)",
-                        "stdout": "Buzzer siren relay on GPIO 26 activated for 1.5 seconds.",
+                        "command": f"pinctrl set {BUZZER_PIN} op dh (1.5s pulse)",
+                        "stdout": (
+                            f"Buzzer GPIO {BUZZER_PIN} test completed; "
+                            + ("safety latch remains active." if safety_demanded else "output restored off.")
+                        ),
                         "stderr": "",
                         "returncode": 0
                     })
@@ -314,7 +371,7 @@ class ApiHandler(http.server.BaseHTTPRequestHandler):
                     capture_output=True,
                     text=True,
                     timeout=30,
-                    cwd="/home/pi/reactor-controller"
+                    cwd=BASE_DIR
                 )
                 self._send_json({
                     "command": cmd,
@@ -347,14 +404,21 @@ class ApiHandler(http.server.BaseHTTPRequestHandler):
                 return
             try:
                 chpasswd_bin = "/usr/sbin/chpasswd" if os.path.exists("/usr/sbin/chpasswd") else "chpasswd"
+                # Determine target user
+                target_user = os.environ.get("SUDO_USER")
+                if not target_user:
+                    # check if pi exists
+                    import pwd
+                    users = [u.pw_name for u in pwd.getpwall() if u.pw_uid >= 1000]
+                    target_user = users[0] if users else "pi"
                 res = subprocess.run(
                     [chpasswd_bin],
-                    input=f"pi:{new_pw}".encode("utf-8"),
+                    input=f"{target_user}:{new_pw}".encode("utf-8"),
                     capture_output=True,
                     timeout=10
                 )
                 if res.returncode == 0:
-                    self._send_json({"status": "ok", "message": "Password for user 'pi' updated successfully!"})
+                    self._send_json({"status": "ok", "message": f"Password for user '{target_user}' updated successfully!"})
                 else:
                     err = res.stderr.decode("utf-8").strip() or "Failed to change password"
                     self._send_json({"status": "error", "message": err}, code=500)
@@ -396,6 +460,9 @@ def boot_failover():
 
 
 def main():
+    if os.path.exists(SAFETY_LATCH_FILE):
+        set_buzzer(True)
+
     # Start boot failover thread
     threading.Thread(target=boot_failover, daemon=True).start()
 

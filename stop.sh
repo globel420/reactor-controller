@@ -1,16 +1,15 @@
-#!/bin/bash
-# Shutdown script for Supervisory Server
+#!/usr/bin/env bash
+set -euo pipefail
 
-if pgrep -f "uvicorn supervisory.app.main:app" > /dev/null; then
-    echo "Stopping Reactor Controller supervisory server..."
-    pkill -f "uvicorn supervisory.app.main:app"
-    echo "Server stopped."
-else
-    echo "Server is not running."
+SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+ENV_FILE="$SCRIPT_DIR/.env"
+
+if [ ! -f "$ENV_FILE" ]; then
+    echo "Missing $ENV_FILE; nothing was stopped." >&2
+    exit 1
 fi
 
-# Stop Chromium browser kiosk instances
-if pgrep -f "chromium" > /dev/null; then
-    echo "Stopping Chromium kiosk browser..."
-    pkill -f "chromium"
-fi
+cd "$SCRIPT_DIR"
+env -u COMPOSE_FILE -u COMPOSE_ENV_FILES -u COMPOSE_PROJECT_NAME \
+    COMPOSE_PROFILES=simulation,hardware \
+    docker compose --env-file "$ENV_FILE" down --remove-orphans

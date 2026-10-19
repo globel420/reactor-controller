@@ -30,11 +30,14 @@ struct SensorData {
   uint8_t errElectronicsHousing;
 
   // Analog Sensors
-  float h2ConcentrationPpm;
+  float h2Millivolts;
   float weightKg;
+  bool loadCellReady;
+  bool loadCellCalibrated;
 
   // Status
-  // 0 = OK, Bit set = Fault (only set after 5 consecutive error reads)
+  // 0 = OK. A bit is set immediately when no valid baseline exists, or after
+  // 5 transient holds followed by a sixth consecutive failed read.
   uint32_t sensorStatus;
   bool sensorsHealthy; // aggregated simple flag
 };
@@ -47,6 +50,7 @@ struct SensorData {
 #define ERR_RTD_GAS_REACTOR_EXT (1 << 4)
 #define ERR_TC_ELECTRONICS_HOUSING (1 << 5)
 #define ERR_H2_SENSOR (1 << 6)
+#define ERR_LOAD_CELL (1 << 7)
 
 // Backward-compatible defines
 #define ERR_TC_FEEDSTOCK_PREHEATER ERR_RTD_FEEDSTOCK_PREHEATER
@@ -61,8 +65,9 @@ public:
   void update();
   SensorData getLastReadings();
 
-  void tareLoadCell();
-  void calibrateLoadCell(float knownWeight);
+  bool tareLoadCell();
+  bool calibrateLoadCell(float knownWeight);
+  bool isLoadCellTared() const { return _loadCellTared; }
 
   static float calculateCvdTemperature(float rOhms);
 
@@ -83,8 +88,13 @@ private:
 
   // Debouncing / Transient Filter (6 channels: 0=FeedRes(TC), 1=FeedPre(RTD), 2=LiqReac(RTD), 3=GasInt(RTD), 4=GasExt(RTD), 5=ElecHousing(TC))
   float _lastValidTemp[6];
+  bool _hasValidTemp[6];
   uint8_t _errorCount[6];
   uint8_t _lastExactErr[6];
+  uint8_t _loadCellErrorCount;
+  bool _hasValidWeight;
+  bool _loadCellCalibrated;
+  bool _loadCellTared;
 };
 
 #endif

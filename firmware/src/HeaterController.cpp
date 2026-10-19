@@ -22,6 +22,10 @@ HeaterController::HeaterController() {
 }
 
 void HeaterController::begin() {
+  // Load the safe LOW value into each output latch before enabling its driver.
+  digitalWrite(PIN_HEATER_FEEDSTOCK_PREHEATER, LOW);
+  digitalWrite(PIN_HEATER_LIQUID_REACTOR, LOW);
+  digitalWrite(PIN_HEATER_GAS_REACTOR, LOW);
   pinMode(PIN_HEATER_FEEDSTOCK_PREHEATER, OUTPUT);
   pinMode(PIN_HEATER_LIQUID_REACTOR, OUTPUT);
   pinMode(PIN_HEATER_GAS_REACTOR, OUTPUT);
@@ -35,9 +39,10 @@ void HeaterController::begin() {
   _pidLiquid->SetOutputLimits(0, WINDOW_SIZE);
   _pidGas->SetOutputLimits(0, WINDOW_SIZE);
 
-  _pidPreheater->SetMode(AUTOMATIC);
-  _pidLiquid->SetMode(AUTOMATIC);
-  _pidGas->SetMode(AUTOMATIC);
+  // Remain in manual mode until the state machine deliberately enables heat.
+  _pidPreheater->SetMode(MANUAL);
+  _pidLiquid->SetMode(MANUAL);
+  _pidGas->SetMode(MANUAL);
 }
 
 void HeaterController::setSetpoints(float spPreheater, float spLiquid, float spGas) {
@@ -47,6 +52,18 @@ void HeaterController::setSetpoints(float spPreheater, float spLiquid, float spG
 }
 
 void HeaterController::setEnabled(bool enabled) {
+  // updateFSM() calls this every control cycle.  Resetting the PWM window on
+  // every repeated "true" call would keep elapsed time near zero and turn any
+  // positive PID output into effectively continuous heater power.
+  if (enabled == _enabled) {
+    if (!enabled) {
+      digitalWrite(PIN_HEATER_FEEDSTOCK_PREHEATER, LOW);
+      digitalWrite(PIN_HEATER_LIQUID_REACTOR, LOW);
+      digitalWrite(PIN_HEATER_GAS_REACTOR, LOW);
+    }
+    return;
+  }
+
   _enabled = enabled;
   if (!enabled) {
     // Force outputs off immediately
@@ -61,7 +78,8 @@ void HeaterController::setEnabled(bool enabled) {
     _outLiquid = 0;
     _outGas = 0;
   } else {
-    _windowStartTime = millis(); // Reset PWM window start timestamp immediately
+    // Start one new window only on the disabled -> enabled transition.
+    _windowStartTime = millis();
     _pidPreheater->SetMode(AUTOMATIC);
     _pidLiquid->SetMode(AUTOMATIC);
     _pidGas->SetMode(AUTOMATIC);

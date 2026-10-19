@@ -1,12 +1,13 @@
 import pytest
 from datetime import datetime, timedelta
-from supervisory.app.database import SessionLocal, init_db, RunsMetadata, Logs1s
+from supervisory.app.database import SessionLocal, init_db, RunsMetadata, Logs1s, assert_safe_test_database
 from supervisory.app.crud import get_run_analytics_summary
 from supervisory.app.orchestrator import orchestrator
 from supervisory.app.main import app
 
 @pytest.fixture(autouse=True)
 def setup_db():
+    assert_safe_test_database()
     init_db()
     with SessionLocal() as db:
         db.query(Logs1s).delete()

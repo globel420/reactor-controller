@@ -6,6 +6,19 @@ import time
 # Simulation Constants
 HOST = '127.0.0.1'
 PORT = 9999
+ACK_REQUIRED_COMMANDS = {
+    "SET_STATE",
+    "SET_TEMP",
+    "TARE_LOADCELL",
+    "CALIBRATE_LOADCELL",
+}
+
+
+def command_response(request_id, command, error=None):
+    response = {"ack": error is None, "rid": request_id, "cmd": command}
+    if error is not None:
+        response["error"] = error
+    return response
 
 class MockReactor:
     def __init__(self):
@@ -78,12 +91,14 @@ class MockReactor:
                 "flow": 0.0,
                 "h2": 0.0,
                 "weight": 5.0,
+                "load_cell_ready": True,
+                "load_cell_calibrated": True,
                 "status": 0
             },
             "heaters": {
-                "feed_pre": int(self.heater_feed_pre),
-                "liq_reac": int(self.heater_liq_reac),
-                "gas_reac": int(self.heater_gas_reac)
+                "feed_pre": round(self.heater_feed_pre / 10.0, 1),
+                "liq_reac": round(self.heater_liq_reac / 10.0, 1),
+                "gas_reac": round(self.heater_gas_reac / 10.0, 1)
             },
             "sp": {
                 "feed_pre": self.sp_feed_pre,
@@ -94,18 +109,61 @@ class MockReactor:
 
     def handle_command(self, cmd):
         print(f"Received: {cmd}")
-        if cmd.get("cmd") == "SET_STATE":
+        command = cmd.get("cmd")
+        request_id = cmd.get("rid")
+        if command in ACK_REQUIRED_COMMANDS and (
+            not isinstance(request_id, int)
+            or isinstance(request_id, bool)
+            or not 1 <= request_id <= 65535
+        ):
+            return {"error": "Missing or invalid request id"}
+
+        if command == "SET_STATE":
+            requested_state = cmd.get("state")
+            if not isinstance(requested_state, int) or isinstance(
+                requested_state, bool
+            ):
+                return command_response(request_id, command, "OUT_OF_RANGE")
             try:
-                self.state = int(cmd.get("state"))
+                if requested_state not in range(5):
+                    raise ValueError("state out of range")
+                self.state = requested_state
                 print(f"MOCK: State set to {self.state}")
-            except:
+                return command_response(request_id, command)
+            except (TypeError, ValueError):
                 print(f"MOCK ERROR: Invalid state value {cmd.get('state')}")
-        elif cmd.get("cmd") == "SET_TEMP":
+                return command_response(request_id, command, "OUT_OF_RANGE")
+        elif command == "SET_TEMP":
             z = cmd.get("zone")
             v = cmd.get("val")
-            if z == 0: self.sp_feed_pre = v
-            if z == 1: self.sp_liq_reac = v
-            if z == 2: self.sp_gas_reac = v
+            if (
+                not isinstance(z, int)
+                or isinstance(z, bool)
+                or z not in (0, 1, 2)
+                or not isinstance(v, (int, float))
+                or isinstance(v, bool)
+                or not 0.0 <= v <= 300.0
+            ):
+                return command_response(request_id, command, "OUT_OF_RANGE")
+            if z == 0:
+                self.sp_feed_pre = v
+            elif z == 1:
+                self.sp_liq_reac = v
+            else:
+                self.sp_gas_reac = v
+            return command_response(request_id, command)
+        elif command == "TARE_LOADCELL":
+            return command_response(request_id, command)
+        elif command == "CALIBRATE_LOADCELL":
+            value = cmd.get("val")
+            if (
+                not isinstance(value, (int, float))
+                or isinstance(value, bool)
+                or value <= 0.0
+            ):
+                return command_response(request_id, command, "OUT_OF_RANGE")
+            return command_response(request_id, command)
+        return None
 
 async def handle_client(reader, writer):
     print("Client Connected")
@@ -126,10 +184,13 @@ async def handle_client(reader, writer):
                 if data:
                     try:
                         cmd = json.loads(data.decode())
-                        reactor.handle_command(cmd)
+                        response = reactor.handle_command(cmd)
+                        if response is not None:
+                            writer.write((json.dumps(response) + "\n").encode())
+                            await writer.drain()
                     except Exception as e:
                         print(f"JSON Error: {e}")
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 pass
                 
             await asyncio.sleep(0.01) # fast loop

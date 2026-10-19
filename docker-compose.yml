@@ -1,64 +1,189 @@
-version: '3.8'
+x-supervisory-common: &supervisory-common
+  build:
+    context: .
+    dockerfile: supervisory/Dockerfile
+  ports:
+    - "8000:8000"
+  volumes:
+    - ./data/simulation:/app/data
+    - ./supervisory:/app/supervisory
+  restart: unless-stopped
+  healthcheck:
+    test:
+      - CMD
+      - python
+      - -c
+      - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/live', timeout=3).read()"
+    interval: 10s
+    timeout: 5s
+    retries: 12
+    start_period: 20s
+
+x-grafana-common: &grafana-common
+  image: grafana/grafana:13.2.4@sha256:dbbc38ea21103cefb50396340cd88afec779c7e070b0a7bf5a75b4ce46651d3f
+  ports:
+    - "3000:3000"
+  environment:
+    GF_SECURITY_ALLOW_EMBEDDING: "true"
+    GF_AUTH_ANONYMOUS_ENABLED: "true"
+    GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+    GF_INSTALL_PLUGINS: "frser-sqlite-datasource 4.0.6"
+  volumes:
+    - ./data/simulation:/data:ro
+    - ./grafana/provisioning:/etc/grafana/provisioning:ro
+  restart: unless-stopped
+  healthcheck:
+    test:
+      - CMD-SHELL
+      - "wget -q --spider http://127.0.0.1:3000/api/health || exit 1"
+    interval: 10s
+    timeout: 5s
+    retries: 12
+    start_period: 30s
 
 services:
-  supervisory:
-    build:
-      context: .
-      dockerfile: supervisory/Dockerfile
-    container_name: reactor_supervisory
-    ports:
-      - "8000:8000"
+  # Development/testing stack. This is the only profile that contains
+  # emulator services, TCP emulator endpoints, or the fault-injection UI.
+  supervisory-simulation:
+    <<: *supervisory-common
+    profiles: [simulation]
     environment:
-      - APP_ENV=${APP_ENV:-development}
-      - DATABASE_URL=sqlite:////app/data/reactor_logs.db
-      - SERIAL_PORT=${SERIAL_PORT:-socket://sensor_emulator:9999}
-      - PUMP_PORT=${PUMP_PORT:-socket://pump_emulator:9998}
-    volumes:
-      - ./data:/app/data
-      - ./supervisory:/app/supervisory
-    restart: unless-stopped
+      APP_ENV: development
+      REACTOR_MODE: simulation
+      DATABASE_URL: sqlite:////app/data/reactor_logs.db
+      SAFETY_LATCH_FILE: /app/data/safety_latched
+      ALARM_CONFIG_FILE: /app/data/alarm_config.json
+      SERIAL_PORT: socket://sensor-emulator:9999
+      PUMP_PORT: socket://pump-emulator:9998
+      PI_BUZZER_GPIO: "${PI_BUZZER_GPIO:-26}"
+      BUZZER_BACKEND: mock
+      ALLOW_MOCK_GPIO: "true"
+      MCU_HEARTBEAT_TIMEOUT_MS: "${MCU_HEARTBEAT_TIMEOUT_MS:?Set MCU_HEARTBEAT_TIMEOUT_MS in .env}"
+      SAFETY_RESET_HYSTERESIS_C: "${SAFETY_RESET_HYSTERESIS_C:-2.0}"
     depends_on:
-      - sensor_emulator
-      - pump_emulator
+      sensor-emulator:
+        condition: service_healthy
+      pump-emulator:
+        condition: service_healthy
 
-  grafana:
-    image: grafana/grafana:latest
-    container_name: reactor_grafana
-    ports:
-      - "3000:3000"
-    environment:
-      - GF_SECURITY_ALLOW_EMBEDDING=true
-      - GF_AUTH_ANONYMOUS_ENABLED=true
-      - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
-      - GF_INSTALL_PLUGINS=frser-sqlite-datasource
-    volumes:
-      - ./data:/data:ro
-      - ./grafana/provisioning:/etc/grafana/provisioning:ro
-    restart: unless-stopped
+  grafana-simulation:
+    <<: *grafana-common
+    profiles: [simulation]
     depends_on:
-      - supervisory
+      supervisory-simulation:
+        condition: service_healthy
 
-  sensor_emulator:
+  sensor-emulator:
     build:
       context: .
       dockerfile: emulators/Dockerfile
-    container_name: reactor_sensor_emulator
+    profiles: [simulation]
     command: python sensor_emulator.py
     ports:
       - "9999:9999"
+      - "9990:9990"
     environment:
-      - PUMP_EMULATOR_HOST=pump_emulator
-      - PUMP_EMULATOR_PORT=9998
+      PUMP_EMULATOR_HOST: pump-emulator
+      PUMP_EMULATOR_PORT: "9998"
     restart: unless-stopped
     depends_on:
-      - pump_emulator
+      pump-emulator:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:9990/api/status', timeout=3).read()"
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
 
-  pump_emulator:
+  pump-emulator:
     build:
       context: .
       dockerfile: emulators/Dockerfile
-    container_name: reactor_pump_emulator
+    profiles: [simulation]
     command: python pump_emulator.py
     ports:
       - "9998:9998"
     restart: unless-stopped
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import socket; connection = socket.create_connection(('127.0.0.1', 9998), timeout=3); connection.close()"
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 5s
+
+  # Physical stack. There are intentionally no emulator dependencies or
+  # socket fallbacks here. Docker refuses to create this container when any
+  # required host character device is absent.
+  supervisory-hardware:
+    <<: *supervisory-common
+    profiles: [hardware]
+    # Production runs the code baked into the image; only mutable state is
+    # mounted from the host. The simulation profile keeps the source bind mount.
+    volumes:
+      - ./data/hardware:/app/data
+    environment:
+      APP_ENV: production
+      REACTOR_MODE: hardware
+      DATABASE_URL: sqlite:////app/data/reactor_logs.db
+      SAFETY_LATCH_FILE: /app/data/safety_latched
+      ALARM_CONFIG_FILE: /app/data/alarm_config.json
+      SERIAL_PORT: /dev/sensor_arduino
+      PUMP_PORT: /dev/pump_arduino
+      PI_BUZZER_GPIO: "${PI_BUZZER_GPIO:-26}"
+      BUZZER_BACKEND: host
+      HOST_SYSTEM_URL: http://host.docker.internal:8001
+      ALLOW_MOCK_GPIO: "false"
+      MCU_HEARTBEAT_TIMEOUT_MS: "${MCU_HEARTBEAT_TIMEOUT_MS:?Set MCU_HEARTBEAT_TIMEOUT_MS in .env}"
+      SAFETY_RESET_HYSTERESIS_C: "${SAFETY_RESET_HYSTERESIS_C:-2.0}"
+      MEGA_PIN_SPI_SCK: "${MEGA_PIN_SPI_SCK:?Set complete MCU pin map in .env}"
+      MEGA_PIN_SPI_MISO: "${MEGA_PIN_SPI_MISO:?Set complete MCU pin map in .env}"
+      MEGA_PIN_TC_FEED_RES: "${MEGA_PIN_TC_FEED_RES:?Set complete MCU pin map in .env}"
+      MEGA_PIN_TC_HOUSING: "${MEGA_PIN_TC_HOUSING:?Set complete MCU pin map in .env}"
+      MEGA_PIN_RTD_PREHEATER: "${MEGA_PIN_RTD_PREHEATER:?Set complete MCU pin map in .env}"
+      MEGA_PIN_RTD_LIQUID: "${MEGA_PIN_RTD_LIQUID:?Set complete MCU pin map in .env}"
+      MEGA_PIN_RTD_GAS_INT: "${MEGA_PIN_RTD_GAS_INT:?Set complete MCU pin map in .env}"
+      MEGA_PIN_RTD_GAS_EXT: "${MEGA_PIN_RTD_GAS_EXT:?Set complete MCU pin map in .env}"
+      MEGA_PIN_H2_SENSOR: "${MEGA_PIN_H2_SENSOR:?Set complete MCU pin map in .env}"
+      MEGA_PIN_HX711_SCK: "${MEGA_PIN_HX711_SCK:?Set complete MCU pin map in .env}"
+      MEGA_PIN_HX711_DT: "${MEGA_PIN_HX711_DT:?Set complete MCU pin map in .env}"
+      MEGA_PIN_HEATER_PREHEATER: "${MEGA_PIN_HEATER_PREHEATER:?Set complete MCU pin map in .env}"
+      MEGA_PIN_HEATER_LIQUID: "${MEGA_PIN_HEATER_LIQUID:?Set complete MCU pin map in .env}"
+      MEGA_PIN_HEATER_GAS: "${MEGA_PIN_HEATER_GAS:?Set complete MCU pin map in .env}"
+      UNO_PIN_ENABLE: "${UNO_PIN_ENABLE:?Set complete MCU pin map in .env}"
+      UNO_PIN_STEP: "${UNO_PIN_STEP:?Set complete MCU pin map in .env}"
+      UNO_PIN_DIRECTION: "${UNO_PIN_DIRECTION:?Set complete MCU pin map in .env}"
+    devices:
+      - "${SENSOR_DEVICE_HOST:?Set SENSOR_DEVICE_HOST in .env}:/dev/sensor_arduino:rwm"
+      - "${PUMP_DEVICE_HOST:?Set PUMP_DEVICE_HOST in .env}:/dev/pump_arduino:rwm"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          test -c /dev/sensor_arduino &&
+          test -c /dev/pump_arduino &&
+          python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/live', timeout=3).read()"
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  grafana-hardware:
+    <<: *grafana-common
+    profiles: [hardware]
+    volumes:
+      - ./data/hardware:/data:ro
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+    depends_on:
+      supervisory-hardware:
+        condition: service_healthy

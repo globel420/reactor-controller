@@ -1,10 +1,11 @@
 import pytest
 from datetime import datetime, timedelta
-from supervisory.app.database import Base, SessionLocal, engine, Logs1s, Logs1m, Logs10m
+from supervisory.app.database import Base, SessionLocal, engine, Logs1s, Logs1m, Logs10m, assert_safe_test_database
 from supervisory.app.crud import get_history_downsampled, perform_1m_rollup, perform_10m_rollup
 
 @pytest.fixture(autouse=True)
 def setup_test_db():
+    assert_safe_test_database()
     Base.metadata.create_all(bind=engine)
     with SessionLocal() as db:
         db.query(Logs10m).delete()

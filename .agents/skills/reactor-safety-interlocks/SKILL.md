@@ -52,11 +52,16 @@ Use this skill when auditing safety rules, diagnosing unexpected retreats to `ST
 
 | Interlock Event | Detection Source | System Response | Latched / Automatic |
 |---|---|---|---|
-| **E-STOP Pressed** | Web UI / Hardware Button | Instant 0% PWM duty cycle across all heaters; Stepper pump halted; GPIO 26 buzzer relay energized | Latched (Requires operator reset to State 0) |
-| **Serial Link Lost (>3s)** | Arduino Mega Watchdog | Hardware clamps all SSR PWM duty cycles to 0%; trips buzzer | Automatic retreat |
-| **RTD Sensor Fault** | MAX31865 Fault Register | Supervisory retreats state from `WORKING`/`WARMUP` to `STANDBY`; fault recorded in `error_logs` | Automatic retreat |
+| **Software E-STOP** | Web UI / API | Supervisory latches, commands Mega safe, commands Uno STOP, inhibits dosing, and activates configured buzzer | Latched; explicit reset after safe telemetry |
+| **Serial Link Lost (3s)** | Independent Mega/Uno watchdogs plus supervisor lease | Mega disables heaters while active; Uno disables pump while running; supervisor records a communications trip | Latched supervisory trip |
+| **RTD Sensor Fault** | MAX31865 Fault Register | Mega latches FAULT and disables heaters; supervisor stops pump and records the trip | Latched; explicit reset |
 | **Over-Temperature Excursion** | Supervisory Telemetry Monitor | Zone exceeded configured high threshold (e.g. Liquid Core $> 220^\circ\text{C}$); cuts zone duty cycle and trips alarm | Latched Alarm |
-| **MQ-8 Hydrogen Gas Spike** | MQ-8 Analog Sensor | Gas concentration exceeds safety limit (e.g. $> 300\,\text{ppm}$); cuts heating, triggers audible siren | Latched Alarm |
+| **MQ-8 reading** | MQ-8 Analog Sensor | Telemetry only until the sensor is physically calibrated and an approved threshold/interlock is specified | Not a safety interlock |
+
+> [!CAUTION]
+> The software E-STOP is not the independent physical power-removal circuit.
+> A normally-closed E-STOP/contactor and fail-safe pump-enable wiring remain
+> mandatory before physical commissioning.
 
 ---
 

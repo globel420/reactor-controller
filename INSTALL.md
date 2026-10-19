@@ -73,6 +73,8 @@ This guide provides instructions for setting up both the **embedded firmware** (
 
 The system uses two separate firmware projects built with **PlatformIO**.
 
+Copy `.env.example` to `.env` at the repository root and verify every `MEGA_PIN_*`, `UNO_PIN_*`, and `MCU_HEARTBEAT_TIMEOUT_MS` value against the physical wiring. Both PlatformIO projects load these build-time values from that one file. The shipped values reproduce the documented wiring map.
+
 ### Option A: VS Code (Recommended)
 
 1. Install **Visual Studio Code** and the **PlatformIO IDE** extension.
@@ -92,51 +94,91 @@ The system uses two separate firmware projects built with **PlatformIO**.
 2. Flash the Sensor Arduino:
 
    ```bash
-   cd ~/reactor-controller/firmware
-   ~/.platformio/penv/bin/pio run -t upload
+   cd ~/reactor-controller
+   REACTOR_ENV_FILE=.env ~/.platformio/penv/bin/pio run \
+     --project-dir firmware -e megaatmega2560_main -t upload \
+     --upload-port /dev/sensor_arduino
    ```
 
 3. Flash the Pump Arduino:
 
    ```bash
-   cd ~/reactor-controller/pump_firmware
-   ~/.platformio/penv/bin/pio run -t upload
+   cd ~/reactor-controller
+   REACTOR_ENV_FILE=.env ~/.platformio/penv/bin/pio run \
+     --project-dir pump_firmware -e uno -t upload \
+     --upload-port /dev/pump_arduino
    ```
 
 ---
 
-## 3. Supervisory System Installation (Raspberry Pi)
+## 3. Automated Raspberry Pi 4 Production Setup (`setup_pi.sh`)
 
-We provide an automated deployment script to handle installation on the Raspberry Pi.
+We provide an end-to-end automated deployment script (`setup_pi.sh`) engineered for the Raspberry Pi 4 running Raspberry Pi OS Lite 64-bit (Trixie).
 
-### Automated Installation
+> [!IMPORTANT]
+> **FIRST-TIME / NEW RIG PROVISIONING ONLY**:
+> `setup_pi.sh` is designed strictly for **initial, out-of-the-box setup** of a fresh Raspberry Pi SBC (or disaster recovery re-flashing). **DO NOT** run this script on an already-configured, live operational reactor controller rig, as it re-prompts for administrator credentials, resets network interfaces, and rebuilds the container stack. For routine maintenance or updates on an active rig, use standard container commands (`docker compose restart`) or the fast rsync pipeline.
 
-1. Copy `deploy_pi.py` to your Raspberry Pi.
-2. Run the script:
+### Automated Features:
+- **Interactive Security Setup**: Prompts for the admin credential, keeps direct root password login locked, and adds the operator to `sudo`, `dialout`, `docker`, and `netdev` groups.
+- **Docker Microservices**: Automatically installs Docker Engine and the Docker Compose plugin, creates persistent `./data` storage, validates the selected profile, and waits for its health checks.
+- **One-File Hardware & Simulation Switch**: Creates root `.env`. `COMPOSE_PROFILES=simulation` launches the supervisor, Grafana, both emulators, and the fault UI; `COMPOSE_PROFILES=hardware` launches only the supervisor and Grafana.
+- **Shared Host Configuration**: The generated `reactor-system-manager.service` loads the same root `.env`, including `PI_BUZZER_GPIO`; the setup script restarts it after writing the file.
+- **Fail-Closed Hardware Startup**: Hardware mode requires the exact configured Mega and Uno devices. The root host manager is the only GPIO owner and consumes `PI_BUZZER_GPIO` from `.env`. There is no emulator service, emulator port, TCP fallback, or mock buzzer fallback.
+- **Tailscale Mesh VPN (NAT Traversal)**: Configures Tailscale to bypass home/lab router NATs with zero port-forwarding, displays the web authentication link, and enables `tailscaled.service` to auto-reconnect on boot.
+- **Field Wi-Fi Hotspot ("Reactor-Rig")**: Creates an ad-hoc NetworkManager AP (`Reactor-Rig` on `wlan0`, default IP `10.42.0.1`) with a 15-second boot failover daemon (`reactor-system-manager.service`) and port 80 captive portal redirect to `:8000`.
+- **Dual-MCU UDEV Rules**: Maps each controller to `/dev/sensor_arduino` or `/dev/pump_arduino` only by its exact `ID_SERIAL_SHORT` recorded in `.env`; VID/PID-only matching is intentionally rejected as ambiguous.
+- **Operator Connection Dashboard**: At completion, outputs all URLs (Tailscale, Local LAN, Field Hotspot) and SSH access instructions.
 
+### Running the Setup Script on your Raspberry Pi:
+
+1. Clone the repository and navigate into it:
    ```bash
-   python3 deploy_pi.py
+   git clone https://github.com/robertchristophersmith/reactor-controller.git ~/reactor-controller
+   cd ~/reactor-controller
    ```
 
-   *This script will:*
-   - Install system dependencies (`git`, `python3-venv`).
-   - Clone this repository to `~/reactor-controller`.
-   - Create a virtual environment and install Python requirements.
-   - Add your user to the `dialout` group for serial access.
+2. Run the deployment script with root privileges:
+   ```bash
+   sudo ./setup_pi.sh
+   ```
 
-### Running the Application
+3. Follow the on-screen prompts:
+   - Enter your desired Admin password.
+   - Authorize Tailscale when prompted (click the provided URL or enter an auth key).
+   - Select Emulation Mode (1) or Physical Hardware Mode (2).
 
-After installation, the script will provide instructions. To start the server manually:
+### Changing an Existing Installation Between Testing and Hardware
 
-```bash
-cd ~/reactor-controller
-./venv/bin/uvicorn supervisory.main:app --host 0.0.0.0 --port 8000
+The root `.env` is the only mode configuration file. Confirm its device paths and pin map, then change one selector:
+
+```dotenv
+# Full simulator, including http://localhost:9990 fault injection
+COMPOSE_PROFILES=simulation
+
+# Real Mega and Uno; no emulators or emulator ports
+COMPOSE_PROFILES=hardware
 ```
 
-### Accessing the Interface
+Apply the selected profile:
 
-Open a web browser on any device on the same network and navigate to:
-`http://<RASPBERRY_PI_IP>:8000`
+```bash
+python3 scripts/load_firmware_env.py --env-file .env --check
+./scripts/apply_profile.sh
+```
+
+Pin changes take effect only after rebuilding and safely flashing the affected
+MCU. Hardware readiness compares the firmware-reported Mega and Uno
+configuration fingerprints with the selected `.env` and rejects a mismatch.
+Mega state, setpoint, tare, and calibration commands are not considered
+successful until the firmware returns the matching request-ID ACK.
+
+For `hardware`, the service list must contain only `supervisory-hardware` and `grafana-hardware`. Startup fails if `SENSOR_DEVICE_HOST` or `PUMP_DEVICE_HOST` is missing, ambiguous, or not a usable character device. Hardware mode forces the host buzzer backend and refuses the testing mock.
+
+Simulation and physical state are intentionally separate: `data/simulation`
+and `data/hardware`. If an older installation has `data/reactor_logs.db`, stop
+the old stack, back it up, and deliberately migrate only verified physical data
+into `data/hardware`; the switch helper will not guess which environment made it.
 
 ---
 
@@ -148,19 +190,20 @@ To develop or test the supervisory control logic without physical hardware (Ardu
 
 Ensure you have **Docker** and **Docker Compose** installed and running.
 
-1. Build and start the services:
+1. Create the operator configuration and keep its default simulation profile:
 
    ```bash
-   docker compose build
-   docker compose up
+   cp .env.example .env
+   ./scripts/apply_profile.sh
    ```
 
    *This starts:*
    - **supervisory** (FastAPI at `http://localhost:8000`)
-   - **sensor_emulator** (TCP port `9999`)
-   - **pump_emulator** (TCP port `9998`)
+   - **grafana** (SCADA dashboards at `http://localhost:3000`)
+   - **sensor-emulator** (TCP port `9999` + **Fault Injection Dashboard at `http://localhost:9990`**)
+   - **pump-emulator** (TCP port `9998`)
 
-2. Open `http://localhost:8000` in your web browser.
+2. Open `http://localhost:8000` for the Reactor SCADA UI, or `http://localhost:9990` for the Environment & Fault Injection Console.
 
 ### Option B: Running Locally (Without Docker)
 
@@ -178,7 +221,7 @@ You can run the emulators and FastAPI app directly on your local machine using P
    python emulators/pump_emulator.py
    ```
 
-3. Start the **Sensor Emulator** in another terminal:
+3. Start the **Sensor Emulator** in another terminal (exposes the Environment & Fault Console at `http://localhost:9990`):
 
    ```bash
    # Linux/macOS
@@ -218,4 +261,6 @@ You can run the emulators and FastAPI app directly on your local machine using P
     ```bash
     sudo udevadm control --reload-rules && sudo udevadm trigger
     ```
+- **Wrong Services Start**: Run `docker compose config --services`. The output is controlled by `COMPOSE_PROFILES` in root `.env`; use only `simulation` or `hardware`, never both.
+- **Hardware Profile Refuses to Start**: Verify the exact MCU USB serial identities and `SENSOR_DEVICE_HOST`/`PUMP_DEVICE_HOST` in `.env`, then run `test -c /dev/sensor_arduino && test -c /dev/pump_arduino`. This refusal prevents silent emulator or device-identity fallback.
 - **Blank Web Page**: Ensure you are using a modern browser. Check the JS console (F12) for errors.

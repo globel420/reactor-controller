@@ -4,22 +4,83 @@
 
 const int EEPROM_CALIBRATION_ADDR = 0;
 const uint32_t CALIBRATION_MAGIC = 0x1A2B3C4D;
+const uint16_t CALIBRATION_VERSION = 1;
+const uint8_t SENSOR_FAULT_THRESHOLD = 6;
+const float MIN_CALIBRATION_SCALE_ABS = 1.0f;
+const float MAX_CALIBRATION_SCALE_ABS = 1000000000.0f;
 
 struct LoadCellCalibration {
-    uint32_t magic;
-    float scale;
-    long offset;
+  uint32_t magic;
+  uint16_t version;
+  float scale;
+  long offset;
+  uint32_t checksum;
 };
 
+uint32_t checksumMix(uint32_t hash, uint32_t value) {
+  for (uint8_t shift = 0; shift < 32; shift += 8) {
+    hash ^= static_cast<uint8_t>(value >> shift);
+    hash *= 0x01000193UL;
+  }
+  return hash;
+}
+
+uint32_t calibrationChecksum(uint16_t version, float scale, long offset) {
+  union {
+    float value;
+    uint32_t bits;
+  } scaleBits = {scale};
+  uint32_t hash = 0x811C9DC5UL;
+  hash = checksumMix(hash, version);
+  hash = checksumMix(hash, scaleBits.bits);
+  return checksumMix(hash, static_cast<uint32_t>(offset));
+}
+
+bool calibrationScaleIsValid(float scale) {
+  float magnitude = fabs(scale);
+  return isfinite(scale) && magnitude >= MIN_CALIBRATION_SCALE_ABS &&
+         magnitude <= MAX_CALIBRATION_SCALE_ABS;
+}
+
+bool calibrationRecordIsValid(const LoadCellCalibration &cal) {
+  return cal.magic == CALIBRATION_MAGIC &&
+         cal.version == CALIBRATION_VERSION &&
+         calibrationScaleIsValid(cal.scale) &&
+         cal.checksum ==
+             calibrationChecksum(cal.version, cal.scale, cal.offset);
+}
+
+void writeCalibrationRecord(float scale, long offset) {
+  LoadCellCalibration cal = {};
+  cal.magic = CALIBRATION_MAGIC;
+  cal.version = CALIBRATION_VERSION;
+  cal.scale = scale;
+  cal.offset = offset;
+  cal.checksum = calibrationChecksum(cal.version, cal.scale, cal.offset);
+  EEPROM.put(EEPROM_CALIBRATION_ADDR, cal);
+}
+
 SensorManager::SensorManager() {
-  _tcFeedstockReservoir = new Adafruit_MAX31855(PIN_SPI_SCK, PIN_SPI_CS_TC_FEEDSTOCK_RESERVOIR, PIN_SPI_MISO);
-  _tcElectronicsHousing = new Adafruit_MAX31855(PIN_SPI_SCK, PIN_SPI_CS_TC_ELECTRONICS_HOUSING, PIN_SPI_MISO);
+  _currentData = {};
+  _tcFeedstockReservoir =
+      new Adafruit_MAX31855(PIN_TC_SOFT_SCK,
+                           PIN_SPI_CS_TC_FEEDSTOCK_RESERVOIR,
+                           PIN_TC_SOFT_MISO);
+  _tcElectronicsHousing =
+      new Adafruit_MAX31855(PIN_TC_SOFT_SCK,
+                           PIN_SPI_CS_TC_ELECTRONICS_HOUSING,
+                           PIN_TC_SOFT_MISO);
 
   for (int i = 0; i < 6; i++) {
-    _lastValidTemp[i] = 25.0f; // Default room ambient fallback
+    _lastValidTemp[i] = 25.0f; // Storage initializer; gated by _hasValidTemp.
+    _hasValidTemp[i] = false;
     _errorCount[i] = 0;
     _lastExactErr[i] = 0;
   }
+  _loadCellErrorCount = 0;
+  _hasValidWeight = false;
+  _loadCellCalibrated = false;
+  _loadCellTared = false;
 }
 
 void SensorManager::begin() {
@@ -66,18 +127,23 @@ void SensorManager::begin() {
   Serial.println("Init: HX711 Load Cell...");
   _hx711.begin(PIN_HX711_DT, PIN_HX711_SCK);
   
-  LoadCellCalibration cal;
+  LoadCellCalibration cal = {};
   EEPROM.get(EEPROM_CALIBRATION_ADDR, cal);
 
-  if (cal.magic == CALIBRATION_MAGIC) {
+  if (calibrationRecordIsValid(cal)) {
     Serial.println("Loading Load Cell calibration from EEPROM");
     _hx711.set_scale(cal.scale);
     _hx711.set_offset(cal.offset);
+    _loadCellCalibrated = true;
   } else {
-    Serial.println("No valid calibration found in EEPROM. Using defaults.");
-    _hx711.set_scale(1.f); // Default scale
-    _hx711.tare();         // Auto-tare on startup
+    // Never block boot waiting indefinitely for a missing HX711. Start with a
+    // neutral calibration and require an explicit STANDBY tare/calibration.
+    Serial.println("No valid load-cell calibration. STANDBY tare required.");
+    _hx711.set_scale(1.f);
+    _hx711.set_offset(0);
+    _loadCellCalibrated = false;
   }
+  _currentData.loadCellCalibrated = _loadCellCalibrated;
 }
 
 float SensorManager::calculateCvdTemperature(float rOhms) {
@@ -114,22 +180,28 @@ void SensorManager::update() {
       _errorCount[idx] = 0;
       _lastExactErr[idx] = 0;
       _lastValidTemp[idx] = t;
+      _hasValidTemp[idx] = true;
       exactErrOut = 0;
       return t;
     }
 
     // Error detected
-    _errorCount[idx]++;
+    // Saturate instead of allowing an 8-bit counter to wrap back to zero and
+    // accidentally report a persistent fault as healthy after 256 reads.
+    if (_errorCount[idx] < SENSOR_FAULT_THRESHOLD) {
+      _errorCount[idx]++;
+    }
     exactErrOut = (err != 0) ? err : 0x08; // 0x08 = NaN / Comm Fault
     _lastExactErr[idx] = exactErrOut;
 
-    if (_errorCount[idx] < 6) {
+    if (_hasValidTemp[idx] && _errorCount[idx] < SENSOR_FAULT_THRESHOLD) {
       // Transient error (1 to 5 reads): hold previous valid temp, do NOT set error bit yet
       return _lastValidTemp[idx];
     } else {
-      // Persistent error (6th+ read): set error bit and return previous valid temp for safe PID control
+      // A stale value is not safe process feedback.  Mark the channel invalid;
+      // the state machine will latch FAULT before the heater update runs.
       _currentData.sensorStatus |= errBit;
-      return _lastValidTemp[idx];
+      return NAN;
     }
   };
 
@@ -147,22 +219,26 @@ void SensorManager::update() {
       _errorCount[idx] = 0;
       _lastExactErr[idx] = 0;
       _lastValidTemp[idx] = t;
+      _hasValidTemp[idx] = true;
       exactErrOut = 0;
       return t;
     }
 
     // Error detected
-    _errorCount[idx]++;
+    if (_errorCount[idx] < SENSOR_FAULT_THRESHOLD) {
+      _errorCount[idx]++;
+    }
     exactErrOut = (status != 0) ? status : 0x08; // 0x08 = Comm Fault / NaN
     _lastExactErr[idx] = exactErrOut;
 
-    if (_errorCount[idx] < 6) {
+    if (_hasValidTemp[idx] && _errorCount[idx] < SENSOR_FAULT_THRESHOLD) {
       // Transient error (1 to 5 reads): hold previous valid temp
       return _lastValidTemp[idx];
     } else {
-      // Persistent error (6th+ read): set error bit and return previous valid temp for safe PID control
+      // Do not feed the last-known temperature into PID after a persistent
+      // fault; propagate NAN and let the safety state machine disable heat.
       _currentData.sensorStatus |= errBit;
-      return _lastValidTemp[idx];
+      return NAN;
     }
   };
 
@@ -176,47 +252,81 @@ void SensorManager::update() {
   _currentData.tempGasReactorInt = readRtdDebounced(_rtdGasReactorInt, "GasReacInt", 3, ERR_RTD_GAS_REACTOR_INT, _currentData.errGasReactorInt);
   _currentData.tempGasReactorExt = readRtdDebounced(_rtdGasReactorExt, "GasReacExt", 4, ERR_RTD_GAS_REACTOR_EXT, _currentData.errGasReactorExt);
 
-  _currentData.sensorsHealthy = (_currentData.sensorStatus == 0);
-
   // Read Analog H2 Sensor (MQ-8)
   int rawH2 = analogRead(PIN_H2_SENSOR);
   float voltageH2 = rawH2 * (5.0f / 1023.0f);
-  _currentData.h2ConcentrationPpm = voltageH2 * 1000.0f; // Scale 0-5V to 0-5000 ppm estimation
+  // Report the measured analog signal honestly in millivolts. Converting an
+  // uncalibrated MQ-8 voltage directly to ppm would create false precision.
+  _currentData.h2Millivolts = voltageH2 * 1000.0f;
 
   // Read Load Cell
   if (_hx711.is_ready()) {
     // Read a single raw value scaled by current calibration factor
     float newWeight = _hx711.get_units(1);
-    
-    // Apply an Exponential Moving Average (EMA) filter to smooth the noise
-    // 20% new reading, 80% old reading.
-    if (_currentData.weightKg == 0.0) {
-       // Initialize on first read
-       _currentData.weightKg = newWeight;
+
+    if (isfinite(newWeight)) {
+      bool initializeWeight = !_hasValidWeight || isnan(_currentData.weightKg);
+      _loadCellErrorCount = 0;
+      _hasValidWeight = true;
+      _currentData.loadCellReady = true;
+
+      // Apply an Exponential Moving Average (EMA) filter to smooth the noise.
+      if (initializeWeight || _currentData.weightKg == 0.0) {
+        _currentData.weightKg = newWeight;
+      } else {
+        _currentData.weightKg =
+            (0.2 * newWeight) + (0.8 * _currentData.weightKg);
+      }
     } else {
-       _currentData.weightKg = (0.2 * newWeight) + (0.8 * _currentData.weightKg);
+      _currentData.loadCellReady = false;
+      if (_loadCellErrorCount < SENSOR_FAULT_THRESHOLD) {
+        _loadCellErrorCount++;
+      }
+    }
+  } else {
+    _currentData.loadCellReady = false;
+    if (_loadCellErrorCount < SENSOR_FAULT_THRESHOLD) {
+      _loadCellErrorCount++;
     }
   }
+
+  _currentData.loadCellCalibrated = _loadCellCalibrated;
+  if (!_loadCellCalibrated ||
+      _loadCellErrorCount >= SENSOR_FAULT_THRESHOLD) {
+    _currentData.sensorStatus |= ERR_LOAD_CELL;
+    _currentData.weightKg = NAN;
+  }
+
+  // Compute aggregate health only after every sensor, including HX711.
+  _currentData.sensorsHealthy = (_currentData.sensorStatus == 0);
 }
 
 SensorData SensorManager::getLastReadings() { return _currentData; }
 
-void SensorManager::tareLoadCell() {
+bool SensorManager::tareLoadCell() {
+  if (!_hx711.is_ready()) {
+    return false;
+  }
   // tare() internally waits until ready and averages 10 readings
   _hx711.tare(10); 
   _currentData.weightKg = 0.0; // Reset the EMA filter instantly
+  _currentData.loadCellReady = true;
+  _currentData.loadCellCalibrated = _loadCellCalibrated;
+  _loadCellErrorCount = 0;
+  _hasValidWeight = _loadCellCalibrated;
+  _loadCellTared = true;
 
-  // Save new offset to EEPROM
-  LoadCellCalibration cal;
-  EEPROM.get(EEPROM_CALIBRATION_ADDR, cal);
-  cal.magic = CALIBRATION_MAGIC;
-  cal.offset = _hx711.get_offset();
-  cal.scale = _hx711.get_scale(); 
-  EEPROM.put(EEPROM_CALIBRATION_ADDR, cal);
+  // Tare updates the offset but cannot turn an uncalibrated raw signal into a
+  // trusted kg measurement. Persist only when a validated scale already exists.
+  if (_loadCellCalibrated && calibrationScaleIsValid(_hx711.get_scale())) {
+    writeCalibrationRecord(_hx711.get_scale(), _hx711.get_offset());
+  }
+  return true;
 }
 
-void SensorManager::calibrateLoadCell(float knownWeight) {
-  if (knownWeight != 0) {
+bool SensorManager::calibrateLoadCell(float knownWeight) {
+  if (_loadCellTared && isfinite(knownWeight) && knownWeight > 0.0f &&
+      _hx711.is_ready()) {
     // get_value(10) internally waits until ready and averages 10 readings minus offset
     long reading = _hx711.get_value(10); 
     
@@ -225,16 +335,20 @@ void SensorManager::calibrateLoadCell(float knownWeight) {
     // near 0, which would multiply noise into thousands of Kg!
     if (abs(reading) > 500) {
       float scale = (float)reading / knownWeight;
+      if (!calibrationScaleIsValid(scale)) {
+        return false;
+      }
       _hx711.set_scale(scale);
       _currentData.weightKg = knownWeight; // Snap EMA to known weight
+      _currentData.loadCellReady = true;
+      _currentData.loadCellCalibrated = true;
+      _loadCellErrorCount = 0;
+      _hasValidWeight = true;
+      _loadCellCalibrated = true;
 
-      // Save new scale to EEPROM
-      LoadCellCalibration cal;
-      EEPROM.get(EEPROM_CALIBRATION_ADDR, cal);
-      cal.magic = CALIBRATION_MAGIC;
-      cal.scale = scale;
-      cal.offset = _hx711.get_offset();
-      EEPROM.put(EEPROM_CALIBRATION_ADDR, cal);
+      writeCalibrationRecord(scale, _hx711.get_offset());
+      return true;
     }
   }
+  return false;
 }

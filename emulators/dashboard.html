@@ -1,0 +1,557 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Reactor Simulator — Environment & Fault Controller</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Inter:wght@400;500;600;700&display=swap');
+    body { font-family: 'Inter', sans-serif; }
+    .font-mono-num { font-family: 'JetBrains Mono', monospace; font-variant-numeric: tabular-nums; }
+    .glow-red { box-shadow: 0 0 16px rgba(239, 68, 68, 0.4); }
+    .glow-amber { box-shadow: 0 0 16px rgba(245, 158, 11, 0.3); }
+    .glow-emerald { box-shadow: 0 0 16px rgba(16, 185, 129, 0.3); }
+    .scanline {
+      background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%);
+      background-size: 100% 4px;
+    }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 antialiased p-4 md:p-6 min-h-screen">
+
+  <!-- Header -->
+  <header class="max-w-7xl mx-auto mb-6 flex flex-col md:flex-row md:items-center md:justify-between gap-4 border-b border-slate-800 pb-4">
+    <div>
+      <div class="flex items-center gap-3">
+        <span id="connIndicator" class="inline-block w-3.5 h-3.5 rounded-full bg-emerald-500 animate-pulse glow-emerald"></span>
+        <h1 class="text-xl md:text-2xl font-bold tracking-tight text-white flex items-center gap-2">
+          Reactor Environment & Fault Console
+        </h1>
+        <span class="text-xs font-mono uppercase px-2.5 py-0.5 rounded bg-slate-900 border border-slate-700 text-cyan-400">
+          SIMULATOR HIL :9990
+        </span>
+      </div>
+      <p class="text-xs md:text-sm text-slate-400 mt-1">
+        Real-time physics injection, MAX31865 RTD error flags, watchdog timeouts, and safety interlock verification.
+      </p>
+    </div>
+
+    <!-- Quick Global Actions -->
+    <div class="flex items-center gap-3">
+      <button onclick="sendReset()" class="px-3.5 py-2 text-xs font-semibold rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 transition flex items-center gap-2 shadow-sm">
+        <svg class="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+        Reset Normal Physics
+      </button>
+      <button onclick="injectFault('estop')" class="px-4 py-2 text-xs font-bold rounded-lg bg-red-600 hover:bg-red-700 text-white transition flex items-center gap-2 glow-red shadow">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+        TRIP HARD E-STOP
+      </button>
+    </div>
+  </header>
+
+  <main class="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+    <!-- Column 1: Live Status & One-Click Scenarios -->
+    <div class="space-y-6">
+
+      <!-- Live Environment Telemetry Card -->
+      <section class="bg-slate-900/90 border border-slate-800 rounded-xl p-5 shadow-lg backdrop-blur">
+        <div class="flex items-center justify-between mb-4">
+          <h2 class="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-2">
+            <span class="w-2 h-2 rounded-full bg-cyan-400"></span> Live Telemetry Feed
+          </h2>
+          <span id="badgeState" class="px-2 py-0.5 text-xs font-mono font-bold rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+            STATE: ...
+          </span>
+        </div>
+
+        <div class="grid grid-cols-2 gap-3 mb-4">
+          <!-- Preheater -->
+          <div class="p-3 bg-slate-950/80 rounded-lg border border-slate-800/80">
+            <div class="text-[11px] text-slate-400">Preheater</div>
+            <div class="text-2xl font-bold font-mono-num mt-1 flex items-baseline gap-1">
+              <span id="valPre" class="text-white">--</span>
+              <span class="text-xs text-slate-500">°C</span>
+            </div>
+            <div class="text-[11px] text-slate-500 mt-1 font-mono-num">SP: <span id="spPre">--</span>°C | <span id="pwmPre">--</span>%</div>
+          </div>
+
+          <!-- Liquid Core -->
+          <div class="p-3 bg-slate-950/80 rounded-lg border border-slate-800/80">
+            <div class="text-[11px] text-slate-400">Liquid Core</div>
+            <div class="text-2xl font-bold font-mono-num mt-1 flex items-baseline gap-1">
+              <span id="valLiq" class="text-white">--</span>
+              <span class="text-xs text-slate-500">°C</span>
+            </div>
+            <div class="text-[11px] text-slate-500 mt-1 font-mono-num">SP: <span id="spLiq">--</span>°C | <span id="pwmLiq">--</span>%</div>
+          </div>
+
+          <!-- Gas Headspace -->
+          <div class="p-3 bg-slate-950/80 rounded-lg border border-slate-800/80">
+            <div class="text-[11px] text-slate-400">Gas (Int / Ext)</div>
+            <div class="text-xl font-bold font-mono-num mt-1 flex items-baseline gap-1">
+              <span id="valGasInt" class="text-white">--</span>
+              <span class="text-xs text-slate-500">/</span>
+              <span id="valGasExt" class="text-slate-400">--</span>
+              <span class="text-xs text-slate-500">°C</span>
+            </div>
+            <div class="text-[11px] text-slate-500 mt-1 font-mono-num">SP: <span id="spGas">--</span>°C | <span id="pwmGas">--</span>%</div>
+          </div>
+
+          <!-- Load Cell -->
+          <div class="p-3 bg-slate-950/80 rounded-lg border border-slate-800/80">
+            <div class="text-[11px] text-slate-400">HX711 Reagent Mass</div>
+            <div class="text-2xl font-bold font-mono-num mt-1 flex items-baseline gap-1">
+              <span id="valWeight" class="text-cyan-400">--</span>
+              <span class="text-xs text-slate-500">kg</span>
+            </div>
+            <div class="text-[11px] text-slate-500 mt-1 font-mono-num">Pump: <span id="pumpStatus">--</span></div>
+          </div>
+        </div>
+
+        <div class="space-y-2 border-t border-slate-800/80 pt-3 text-xs">
+          <div class="flex justify-between items-center">
+            <span class="text-slate-400">MQ-8 Analog Signal (Advisory):</span>
+            <span id="valH2" class="font-mono-num font-semibold text-blue-400">-- mV</span>
+          </div>
+          <div class="flex justify-between items-center">
+            <span class="text-slate-400">RTD Status Bitmask:</span>
+            <span id="valStatus" class="font-mono-num font-bold text-emerald-400">0x00</span>
+          </div>
+          <div class="flex justify-between items-center">
+            <span class="text-slate-400">Serial 1Hz Comms:</span>
+            <span id="valComms" class="font-mono-num font-semibold text-emerald-400">Broadcasting (:9999)</span>
+          </div>
+          <div id="rowFwError" class="hidden flex justify-between items-center bg-red-950/50 p-2 rounded border border-red-800/60">
+            <span class="text-red-400 font-bold">FW Panic:</span>
+            <span id="valFwError" class="font-mono text-red-300 text-[11px]"></span>
+          </div>
+        </div>
+      </section>
+
+      <!-- Emergency Fault Injections -->
+      <section class="bg-slate-900/90 border border-slate-800 rounded-xl p-5 shadow-lg">
+        <h2 class="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3 flex items-center gap-2">
+          <svg class="w-4 h-4 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+          One-Click Emergency Scenarios
+        </h2>
+
+        <div class="space-y-2.5">
+          <button onclick="injectFault('thermal_runaway')" class="w-full text-left p-3 rounded-lg border border-red-500/30 bg-red-950/20 hover:bg-red-950/40 transition flex items-start gap-3">
+            <span class="text-lg">🔥</span>
+            <div>
+              <div class="text-xs font-bold text-red-400">Thermal Runaway Excursion (315°C)</div>
+              <div class="text-[11px] text-slate-400 mt-0.5">Spikes Liquid Core temperature beyond 300°C maximum hardware safety limit.</div>
+            </div>
+          </button>
+
+          <button onclick="injectFault('tc_fault', {zone: 'pre', bit: 2})" class="w-full text-left p-3 rounded-lg border border-amber-500/30 bg-amber-950/20 hover:bg-amber-950/40 transition flex items-start gap-3">
+            <span class="text-lg">⚡</span>
+            <div>
+              <div class="text-xs font-bold text-amber-400">Preheater RTD Open Circuit (Bit 1 / 0x02)</div>
+              <div class="text-[11px] text-slate-400 mt-0.5">Forces MAX31865 fault bit to test 60s grace timer and SQLite error logging.</div>
+            </div>
+          </button>
+
+          <button onclick="injectFault('comms_freeze', {duration: 6.0})" class="w-full text-left p-3 rounded-lg border border-indigo-500/30 bg-indigo-950/20 hover:bg-indigo-950/40 transition flex items-start gap-3">
+            <span class="text-lg">⏱️</span>
+            <div>
+              <div class="text-xs font-bold text-indigo-400">Watchdog Serial Timeout (6s freeze)</div>
+              <div class="text-[11px] text-slate-400 mt-0.5">Silences 1Hz serial broadcast for 6s to trip watchdog failsafe clamp.</div>
+            </div>
+          </button>
+
+          <button onclick="injectFault('h2_spike', {millivolts: 750})" class="w-full text-left p-3 rounded-lg border border-purple-500/30 bg-purple-950/20 hover:bg-purple-950/40 transition flex items-start gap-3">
+            <span class="text-lg">☣️</span>
+            <div>
+              <div class="text-xs font-bold text-purple-400">MQ-8 Analog Signal Step (750 mV)</div>
+              <div class="text-[11px] text-slate-400 mt-0.5">Testing-only advisory signal change; no calibrated gas alarm or interlock is implied.</div>
+            </div>
+          </button>
+
+          <button onclick="injectFault('tube_blockage', {enabled: true})" class="w-full text-left p-3 rounded-lg border border-blue-500/30 bg-blue-950/20 hover:bg-blue-950/40 transition flex items-start gap-3">
+            <span class="text-lg">🛑</span>
+            <div>
+              <div class="text-xs font-bold text-blue-400">Dosing Tube Blockage (Zero Mass Delta)</div>
+              <div class="text-[11px] text-slate-400 mt-0.5">Freezes load cell mass while pump motor runs to trigger gravimetric fault.</div>
+            </div>
+          </button>
+
+          <button onclick="injectFault('fw_error', {msg: 'ERR_MAX31865_SPI_BUS_COLLISION'})" class="w-full text-left p-3 rounded-lg border border-slate-700 bg-slate-800/40 hover:bg-slate-800/70 transition flex items-start gap-3">
+            <span class="text-lg">🛡️</span>
+            <div>
+              <div class="text-xs font-bold text-slate-300">Firmware Hardware Panic Packet</div>
+              <div class="text-[11px] text-slate-400 mt-0.5">Emits direct hardware safety trip message from Arduino Mega.</div>
+            </div>
+          </button>
+        </div>
+      </section>
+
+    </div>
+
+    <!-- Column 2 & 3: Sliders, Bitmask toggles & Live Event Console -->
+    <div class="lg:col-span-2 space-y-6">
+
+      <!-- Physical Parameter Sliders -->
+      <section class="bg-slate-900/90 border border-slate-800 rounded-xl p-5 shadow-lg">
+        <div class="flex items-center justify-between mb-4">
+          <h2 class="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-2">
+            <svg class="w-4 h-4 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"/></svg>
+            Environmental Physical Sliders & Overrides
+          </h2>
+          <span class="text-[11px] text-slate-500 font-mono">Real-time updates</span>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+          <!-- Preheater Override -->
+          <div>
+            <div class="flex justify-between text-xs mb-1.5 font-mono">
+              <span class="text-slate-300">Preheater RTD</span>
+              <span id="lblPre" class="font-bold text-amber-400">140.0°C</span>
+            </div>
+            <input id="sliderPre" type="range" min="20" max="350" step="0.5" value="140" oninput="overrideParam('t_feed_pre', this.value)" class="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-amber-500">
+            <div class="flex justify-between text-[10px] text-slate-500 mt-1">
+              <span>20°C (Ambient)</span>
+              <span>180°C (High Alarm)</span>
+              <span>350°C (Critical)</span>
+            </div>
+          </div>
+
+          <!-- Liquid Core Override -->
+          <div>
+            <div class="flex justify-between text-xs mb-1.5 font-mono">
+              <span class="text-slate-300">Liquid Core RTD</span>
+              <span id="lblLiq" class="font-bold text-amber-400">195.0°C</span>
+            </div>
+            <input id="sliderLiq" type="range" min="20" max="350" step="0.5" value="195" oninput="overrideParam('t_liq_reac', this.value)" class="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-amber-500">
+            <div class="flex justify-between text-[10px] text-slate-500 mt-1">
+              <span>20°C</span>
+              <span>220°C (High Alarm)</span>
+              <span>300°C (Clamp Limit)</span>
+            </div>
+          </div>
+
+          <!-- Gas Headspace Override -->
+          <div>
+            <div class="flex justify-between text-xs mb-1.5 font-mono">
+              <span class="text-slate-300">Gas Headspace RTD</span>
+              <span id="lblGas" class="font-bold text-amber-400">218.0°C</span>
+            </div>
+            <input id="sliderGas" type="range" min="20" max="350" step="0.5" value="218" oninput="overrideParam('t_gas_reac_int', this.value)" class="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-amber-500">
+            <div class="flex justify-between text-[10px] text-slate-500 mt-1">
+              <span>20°C</span>
+              <span>270°C (High Alarm)</span>
+              <span>350°C</span>
+            </div>
+          </div>
+
+          <!-- Hydrogen Gas Override -->
+          <div>
+            <div class="flex justify-between text-xs mb-1.5 font-mono">
+              <span class="text-slate-300">MQ-8 Analog Signal (Advisory)</span>
+              <span id="lblH2" class="font-bold text-blue-400">12 mV</span>
+            </div>
+            <input id="sliderH2" type="range" min="0" max="5000" step="10" value="12" oninput="overrideParam('h2', this.value)" class="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-blue-500">
+            <div class="flex justify-between text-[10px] text-slate-500 mt-1">
+              <span>0 mV</span>
+              <span>2500 mV</span>
+              <span>5000 mV</span>
+            </div>
+          </div>
+
+          <!-- Load Cell Override -->
+          <div>
+            <div class="flex justify-between text-xs mb-1.5 font-mono">
+              <span class="text-slate-300">HX711 Reagent Mass</span>
+              <span id="lblWeight" class="font-bold text-cyan-400">5.000 kg</span>
+            </div>
+            <input id="sliderWeight" type="range" min="0" max="10" step="0.01" value="5" oninput="overrideParam('weight', this.value)" class="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-cyan-500">
+            <div class="flex justify-between text-[10px] text-slate-500 mt-1">
+              <span>0.00 kg (Empty)</span>
+              <span>5.00 kg (Nominal)</span>
+              <span>10.00 kg (Full)</span>
+            </div>
+          </div>
+
+          <!-- Ambient Room Temp -->
+          <div>
+            <div class="flex justify-between text-xs mb-1.5 font-mono">
+              <span class="text-slate-300">Ambient Laboratory Temp</span>
+              <span id="lblAmb" class="font-bold text-slate-400">25.0°C</span>
+            </div>
+            <input id="sliderAmb" type="range" min="10" max="50" step="0.5" value="25" oninput="overrideParam('ambient', this.value)" class="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-slate-400">
+            <div class="flex justify-between text-[10px] text-slate-500 mt-1">
+              <span>10°C (Cold)</span>
+              <span>25°C (Room Temp)</span>
+              <span>50°C (Hot Rig)</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- MAX31865 RTD Fault Bitmask Toggles -->
+      <section class="bg-slate-900/90 border border-slate-800 rounded-xl p-5 shadow-lg">
+        <div class="flex items-center justify-between mb-4">
+          <h2 class="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-2">
+            <svg class="w-4 h-4 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
+            MAX31865 Fault Register Bitmask (0x07)
+          </h2>
+          <span class="text-xs font-mono font-bold text-amber-400" id="bitmaskDisplay">0x00</span>
+        </div>
+
+        <div class="grid grid-cols-2 sm:grid-cols-3 gap-3 text-xs">
+          <label class="flex items-center gap-2.5 p-3 rounded-lg border border-slate-800 bg-slate-950/80 hover:border-slate-700 cursor-pointer transition">
+            <input type="checkbox" id="bitPre" onchange="toggleBit(1 << 1, this.checked)" class="rounded bg-slate-900 border-slate-700 text-amber-500 focus:ring-0">
+            <div>
+              <div class="font-semibold text-slate-200">Preheater RTD</div>
+              <div class="text-[10px] text-slate-500 font-mono">Bit 1 (0x02)</div>
+            </div>
+          </label>
+
+          <label class="flex items-center gap-2.5 p-3 rounded-lg border border-slate-800 bg-slate-950/80 hover:border-slate-700 cursor-pointer transition">
+            <input type="checkbox" id="bitLiq" onchange="toggleBit(1 << 2, this.checked)" class="rounded bg-slate-900 border-slate-700 text-amber-500 focus:ring-0">
+            <div>
+              <div class="font-semibold text-slate-200">Liquid Core RTD</div>
+              <div class="text-[10px] text-slate-500 font-mono">Bit 2 (0x04)</div>
+            </div>
+          </label>
+
+          <label class="flex items-center gap-2.5 p-3 rounded-lg border border-slate-800 bg-slate-950/80 hover:border-slate-700 cursor-pointer transition">
+            <input type="checkbox" id="bitGas" onchange="toggleBit(1 << 3, this.checked)" class="rounded bg-slate-900 border-slate-700 text-amber-500 focus:ring-0">
+            <div>
+              <div class="font-semibold text-slate-200">Gas Int RTD</div>
+              <div class="text-[10px] text-slate-500 font-mono">Bit 3 (0x08)</div>
+            </div>
+          </label>
+
+          <label class="flex items-center gap-2.5 p-3 rounded-lg border border-slate-800 bg-slate-950/80 hover:border-slate-700 cursor-pointer transition">
+            <input type="checkbox" id="bitHousing" onchange="toggleBit(1 << 5, this.checked)" class="rounded bg-slate-900 border-slate-700 text-amber-500 focus:ring-0">
+            <div>
+              <div class="font-semibold text-slate-200">Housing TC</div>
+              <div class="text-[10px] text-slate-500 font-mono">Bit 5 (0x20)</div>
+            </div>
+          </label>
+
+          <label class="flex items-center gap-2.5 p-3 rounded-lg border border-slate-800 bg-slate-950/80 hover:border-slate-700 cursor-pointer transition">
+            <input type="checkbox" id="bitLowThresh" onchange="toggleBit(1 << 6, this.checked)" class="rounded bg-slate-900 border-slate-700 text-amber-500 focus:ring-0">
+            <div>
+              <div class="font-semibold text-slate-200">Low Threshold</div>
+              <div class="text-[10px] text-slate-500 font-mono">Bit 6 (0x40)</div>
+            </div>
+          </label>
+
+          <label class="flex items-center gap-2.5 p-3 rounded-lg border border-slate-800 bg-slate-950/80 hover:border-slate-700 cursor-pointer transition">
+            <input type="checkbox" id="bitHighThresh" onchange="toggleBit(1 << 7, this.checked)" class="rounded bg-slate-900 border-slate-700 text-amber-500 focus:ring-0">
+            <div>
+              <div class="font-semibold text-slate-200">High Threshold</div>
+              <div class="text-[10px] text-slate-500 font-mono">Bit 7 (0x80)</div>
+            </div>
+          </label>
+        </div>
+      </section>
+
+      <!-- Protocol Event Console -->
+      <section class="bg-slate-900/90 border border-slate-800 rounded-xl p-5 shadow-lg">
+        <div class="flex items-center justify-between mb-3">
+          <h2 class="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-2">
+            <svg class="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+            Simulator Event & Fault Injection Log
+          </h2>
+          <button onclick="clearConsole()" class="text-[11px] text-slate-500 hover:text-slate-300 transition">
+            Clear Log
+          </button>
+        </div>
+
+        <div id="consoleLog" class="h-40 bg-slate-950 border border-slate-800/80 rounded-lg p-3 font-mono text-[11px] overflow-y-auto space-y-1 scanline text-slate-300">
+          <div class="text-slate-500">[INIT] Console loaded. Connecting to simulator on port 9990...</div>
+        </div>
+      </section>
+
+    </div>
+
+  </main>
+
+  <script>
+    let currentBitmask = 0;
+
+    function addLog(msg, colorClass = "text-slate-300") {
+      const el = document.getElementById("consoleLog");
+      const time = new Date().toTimeString().split(' ')[0];
+      const line = document.createElement("div");
+      line.className = colorClass;
+      line.innerText = `[${time}] ${msg}`;
+      el.appendChild(line);
+      el.scrollTop = el.scrollHeight;
+    }
+
+    function clearConsole() {
+      document.getElementById("consoleLog").innerHTML = "";
+    }
+
+    async function fetchStatus() {
+      try {
+        const res = await fetch('/api/status');
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        const data = await res.json();
+        renderStatus(data);
+      } catch (err) {
+        document.getElementById('connIndicator').className = "inline-block w-3.5 h-3.5 rounded-full bg-red-500 animate-pulse";
+      }
+    }
+
+    function renderStatus(data) {
+      document.getElementById('connIndicator').className = "inline-block w-3.5 h-3.5 rounded-full bg-emerald-500 animate-pulse glow-emerald";
+
+      // State
+      const states = ["0: STANDBY", "1: WARMUP", "2: WORKING"];
+      const stateName = states[data.state] || (data.state + ": UNKNOWN");
+      const badge = document.getElementById('badgeState');
+      badge.innerText = stateName;
+      if (data.state === 2) {
+        badge.className = "px-2 py-0.5 text-xs font-mono font-bold rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30";
+      } else if (data.state === 1) {
+        badge.className = "px-2 py-0.5 text-xs font-mono font-bold rounded bg-amber-500/20 text-amber-400 border border-amber-500/30";
+      } else {
+        badge.className = "px-2 py-0.5 text-xs font-mono font-bold rounded bg-red-500/20 text-red-400 border border-red-500/30";
+      }
+
+      // Temperatures
+      const s = data.sensors || {};
+      const sp = data.sp || {};
+      const h = data.heaters || {};
+
+      document.getElementById('valPre').innerText = s.t_feed_pre !== null ? s.t_feed_pre.toFixed(1) : "OFFLINE";
+      document.getElementById('spPre').innerText = (sp.feed_pre || 0).toFixed(0);
+      document.getElementById('pwmPre').innerText = (h.feed_pre || 0).toFixed(0);
+
+      document.getElementById('valLiq').innerText = s.t_liq_reac !== null ? s.t_liq_reac.toFixed(1) : "OFFLINE";
+      document.getElementById('spLiq').innerText = (sp.liq_reac || 0).toFixed(0);
+      document.getElementById('pwmLiq').innerText = (h.liq_reac || 0).toFixed(0);
+
+      document.getElementById('valGasInt').innerText = s.t_gas_reac_int !== null ? s.t_gas_reac_int.toFixed(1) : "--";
+      document.getElementById('valGasExt').innerText = s.t_gas_reac_ext !== null ? s.t_gas_reac_ext.toFixed(1) : "--";
+      document.getElementById('spGas').innerText = (sp.gas_reac || 0).toFixed(0);
+      document.getElementById('pwmGas').innerText = (h.gas_reac || 0).toFixed(0);
+
+      // Mass & Pump
+      document.getElementById('valWeight').innerText = s.weight !== undefined ? s.weight.toFixed(3) : "--";
+      const p = data.pump || {};
+      document.getElementById('pumpStatus').innerText = p.running ? `${p.speed} RPM (${p.dir === 0 ? 'FWD' : 'REV'})` : "STOPPED";
+
+      // H2 & Bitmask
+      document.getElementById('valH2').innerText = `${s.h2 || 0} mV`;
+      document.getElementById('valH2').className = "font-mono-num font-semibold text-blue-400";
+
+      const hexStatus = '0x' + (s.status || 0).toString(16).padStart(2, '0').toUpperCase();
+      document.getElementById('valStatus').innerText = hexStatus;
+      document.getElementById('bitmaskDisplay').innerText = hexStatus;
+      currentBitmask = s.status || 0;
+
+      // Update Bitmask Checkboxes if not manually focused
+      ['bitPre', 'bitLiq', 'bitGas', 'bitHousing', 'bitLowThresh', 'bitHighThresh'].forEach(id => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        const bitMap = {
+          bitPre: 1 << 1,
+          bitLiq: 1 << 2,
+          bitGas: 1 << 3,
+          bitHousing: 1 << 5,
+          bitLowThresh: 1 << 6,
+          bitHighThresh: 1 << 7
+        };
+        el.checked = (currentBitmask & bitMap[id]) !== 0;
+      });
+
+      // Comms
+      const commsEl = document.getElementById('valComms');
+      if (data.comms_frozen) {
+        commsEl.innerText = `FROZEN (${data.comms_frozen_remain.toFixed(1)}s)`;
+        commsEl.className = "font-mono-num font-bold text-red-400 animate-pulse";
+      } else {
+        commsEl.innerText = "Broadcasting (1 Hz)";
+        commsEl.className = "font-mono-num font-semibold text-emerald-400";
+      }
+
+      // FW Panic
+      const fwRow = document.getElementById('rowFwError');
+      if (data.firmware_error) {
+        fwRow.classList.remove('hidden');
+        document.getElementById('valFwError').innerText = data.firmware_error;
+      } else {
+        fwRow.classList.add('hidden');
+      }
+    }
+
+    async function injectFault(type, params = {}) {
+      try {
+        const payload = Object.assign({ type: type }, params);
+        const res = await fetch('/api/fault', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const out = await res.json();
+        addLog(`⚡ FAULT TRIGGERED: ${type} -> ${JSON.stringify(params)}`, "text-amber-400 font-semibold");
+        fetchStatus();
+      } catch (err) {
+        addLog(`❌ Failed to inject fault: ${err}`, "text-red-400");
+      }
+    }
+
+    async function overrideParam(param, val) {
+      const fVal = parseFloat(val);
+      if (param === 't_feed_pre') document.getElementById('lblPre').innerText = fVal.toFixed(1) + '°C';
+      if (param === 't_liq_reac') document.getElementById('lblLiq').innerText = fVal.toFixed(1) + '°C';
+      if (param === 't_gas_reac_int') document.getElementById('lblGas').innerText = fVal.toFixed(1) + '°C';
+      if (param === 'h2') document.getElementById('lblH2').innerText = parseInt(val) + ' mV';
+      if (param === 'weight') document.getElementById('lblWeight').innerText = fVal.toFixed(3) + ' kg';
+      if (param === 'ambient') document.getElementById('lblAmb').innerText = fVal.toFixed(1) + '°C';
+
+      try {
+        await fetch('/api/override', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ param: param, value: fVal })
+        });
+      } catch (err) {
+        console.error(err);
+      }
+    }
+
+    async function toggleBit(bitVal, isChecked) {
+      if (isChecked) {
+        currentBitmask |= bitVal;
+      } else {
+        currentBitmask &= ~bitVal;
+      }
+      try {
+        await fetch('/api/fault', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ type: 'status_bitmask', bitmask: currentBitmask })
+        });
+        addLog(`Bitmask updated to 0x${currentBitmask.toString(16).padStart(2, '0').toUpperCase()}`, "text-cyan-300");
+        fetchStatus();
+      } catch (err) {
+        addLog(`Failed to update bitmask: ${err}`, "text-red-400");
+      }
+    }
+
+    async function sendReset() {
+      try {
+        const res = await fetch('/api/reset', { method: 'POST' });
+        const out = await res.json();
+        addLog("🟢 Simulator reset to normal closed-loop thermodynamics.", "text-emerald-400 font-bold");
+        fetchStatus();
+      } catch (err) {
+        addLog("Failed to reset simulator: " + err, "text-red-400");
+      }
+    }
+
+    // Polling 1Hz
+    fetchStatus();
+    setInterval(fetchStatus, 1000);
+  </script>
+</body>
+</html>

@@ -176,7 +176,8 @@
 
             useEffect(() => {
                 if (!sessionReady) return;
-                const ws = new WebSocket(`ws://${window.location.host}/ws`);
+                const wsScheme = window.location.protocol === 'https:' ? 'wss' : 'ws';
+                const ws = new WebSocket(`${wsScheme}://${window.location.host}/ws`);
 
                 ws.onopen = () => setStatus("CONNECTED");
                 ws.onclose = () => setStatus("DISCONNECTED");
@@ -187,6 +188,14 @@
                         
                         if (msg.event === "manual_override") {
                             console.warn("Physical manual override detected!");
+                            return;
+                        }
+                        if (msg.event === "safety_trip" || msg.event === "safety_reset") {
+                            setLatest(prev => ({
+                                ...(prev || {}),
+                                state: msg.state ?? prev?.state,
+                                safety: msg.safety,
+                            }));
                             return;
                         }
                         
@@ -237,12 +246,48 @@
                 return () => webBuzzer.stop();
             }, [activeAlarmsList.length, isAlarmsSilenced, audioMuted]);
 
+            const controlRequest = async (url, options = {}) => {
+                const response = await fetch(url, options);
+                const body = await response.json().catch(() => ({}));
+                if (!response.ok) {
+                    const detail = typeof body.detail === 'string'
+                        ? body.detail
+                        : JSON.stringify(body.detail || body);
+                    throw new Error(detail || `Request failed (${response.status})`);
+                }
+                return body;
+            }
+
             const sendState = async (s) => {
-                await fetch(`/api/control/state/${s}`, { method: 'POST' });
+                try {
+                    await controlRequest(`/api/control/state/${s}`, { method: 'POST' });
+                } catch (error) {
+                    window.alert(`State change rejected: ${error.message}`);
+                }
             }
 
             const sendSetpoint = async (zone, val, rate) => {
-                await fetch(`/api/control/setpoint?zone=${zone}&value=${val}&rate=${rate || 0}`, { method: 'POST' });
+                try {
+                    await controlRequest(`/api/control/setpoint?zone=${zone}&value=${val}&rate=${rate || 0}`, { method: 'POST' });
+                } catch (error) {
+                    window.alert(`Setpoint rejected: ${error.message}`);
+                }
+            }
+
+            const emergencyStop = async () => {
+                try {
+                    await controlRequest('/api/control/estop', { method: 'POST' });
+                } catch (error) {
+                    window.alert(`E-STOP request failed: ${error.message}`);
+                }
+            }
+
+            const resetSafety = async () => {
+                const response = await fetch('/api/control/safety/reset', { method: 'POST' });
+                if (!response.ok) {
+                    const body = await response.json().catch(() => ({}));
+                    window.alert(body.detail || 'Safety reset was rejected');
+                }
             }
 
             if (!runStatus) return <div className="p-10 text-center text-gray-400">Loading Session State...</div>;
@@ -255,9 +300,10 @@
             const s = l.sensors || {};
             const h = l.heaters || {};
             const sp = l.sp || {};
-            const stateIdx = l.state || 0;
+            const stateIdx = l.state;
             const errMask = s.status || 0;
             const alarms = l.alarms || { active: [], silenced: false, silence_time_left: 0.0 };
+            const safety = l.safety || { latched: false, trip: null, actuators_confirmed_safe: false };
             const isConnected = status === "CONNECTED" && l.serial_connected !== false;
 
             return (
@@ -391,8 +437,8 @@
 
                             {/* Embedded Grafana Frame */}
                             <div className="w-full h-[78vh] rounded-xl overflow-hidden border border-gray-700 bg-gray-950 shadow-2xl relative">
-                                <iframe 
-                                    src={`http://${window.location.hostname}:3000/d/${selectedDashboard}?kiosk&theme=dark`} 
+                                <iframe
+                                    src={`${window.location.protocol}//${window.location.hostname}:3000/d/${selectedDashboard}?kiosk&theme=dark`}
                                     className="w-full h-full border-0"
                                     title="Grafana Analytics Dashboard"
                                 />
@@ -403,9 +449,17 @@
                             {/* Controls */}
                             <div className="flex gap-2 justify-center">
                                 <button onClick={() => sendState(0)} className={`px-6 py-2 rounded font-bold transition-all ${stateIdx === 0 ? 'bg-gray-600 ring-2 ring-white' : 'bg-gray-700 text-gray-400 hover:bg-gray-600'}`}>STANDBY</button>
-                                <button onClick={() => sendState(1)} className={`px-6 py-2 rounded font-bold transition-all ${stateIdx === 1 ? 'bg-yellow-600 ring-2 ring-white' : 'bg-yellow-800 text-yellow-200 hover:bg-yellow-700'}`}>WARMUP</button>
-                                <button onClick={() => sendState(2)} className={`px-6 py-2 rounded font-bold transition-all ${stateIdx === 2 ? 'bg-green-600 ring-2 ring-white' : 'bg-green-800 text-green-200 hover:bg-green-700'}`}>WORKING</button>
+                                <button disabled={safety.latched} onClick={() => sendState(1)} className={`px-6 py-2 rounded font-bold transition-all disabled:opacity-40 disabled:cursor-not-allowed ${stateIdx === 1 ? 'bg-yellow-600 ring-2 ring-white' : 'bg-yellow-800 text-yellow-200 hover:bg-yellow-700'}`}>WARMUP</button>
+                                <button disabled={safety.latched} onClick={() => sendState(2)} className={`px-6 py-2 rounded font-bold transition-all disabled:opacity-40 disabled:cursor-not-allowed ${stateIdx === 2 ? 'bg-green-600 ring-2 ring-white' : 'bg-green-800 text-green-200 hover:bg-green-700'}`}>WORKING</button>
+                                <button onClick={emergencyStop} className="px-6 py-2 rounded font-black bg-red-600 hover:bg-red-500 text-white ring-2 ring-red-300 animate-pulse">E-STOP</button>
+                                <button disabled={!safety.latched} onClick={resetSafety} className="px-4 py-2 rounded font-bold bg-blue-700 hover:bg-blue-600 text-white disabled:opacity-30 disabled:cursor-not-allowed">RESET SAFETY</button>
                             </div>
+
+                            {safety.latched && (
+                                <div className="bg-red-950 border-2 border-red-500 rounded-lg p-3 text-center text-red-100 font-bold">
+                                    SAFETY LATCHED: {safety.trip?.description || 'Reset required after safe conditions are verified'}
+                                </div>
+                            )}
 
                             {/* Process Cards */}
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -413,12 +467,14 @@
                                 <PumpCard pump={l.pump} />
 
                                 {/* Load Cell */}
-                                <LoadCellCard weight={s.weight} 
-                                    onTare={() => fetch('/api/control/tare', { method: 'POST' })}
-                                    onCalibrate={(w) => fetch(`/api/control/calibrate?value=${w}`, { method: 'POST' })} />
+                                <LoadCellCard weight={s.weight}
+                                    ready={s.load_cell_ready === true}
+                                    calibrated={s.load_cell_calibrated === true}
+                                    onTare={() => controlRequest('/api/control/tare', { method: 'POST' })}
+                                    onCalibrate={(w) => controlRequest(`/api/control/calibrate?value=${w}`, { method: 'POST' })} />
 
                                 {/* H2 Sensor */}
-                                <SensorCard title="H2 Sensor" value={s.h2} unit="ppm" color="text-pink-400" border="border-pink-500" />
+                                <SensorCard title="MQ-8 Advisory Voltage" value={s.h2 == null ? null : s.h2 / 1000.0} unit="V" color="text-pink-400" border="border-pink-500" />
                             </div>
 
                             {/* Temperature Controls */}
@@ -1707,11 +1763,19 @@
 
             const handleResume = async () => {
                 try {
-                    await fetch('/api/run/resume', { method: 'POST' });
+                    const response = await fetch('/api/run/resume', { method: 'POST' });
+                    const body = await response.json().catch(() => ({}));
+                    if (!response.ok || !body.restored) {
+                        const detail = typeof body.detail === 'string'
+                            ? body.detail
+                            : JSON.stringify(body.detail || body);
+                        throw new Error(detail || "Stored configuration was not restored");
+                    }
+                    onComplete();
                 } catch (e) {
                     console.error("Error resuming run configuration", e);
+                    window.alert(`Resume blocked: ${e.message}`);
                 }
-                onComplete();
             };
 
             const handleExportAndClear = () => {
@@ -1887,7 +1951,7 @@
                             ) : (
                                 sub && <div className="text-xs text-gray-400 font-mono mt-1">{sub}</div>
                             )}
-                            <div className="text-sm text-gray-500 mt-1">Output: <span className={out > 0 ? "text-orange-400" : "text-gray-600"}>{(out / 10).toFixed(0)}%</span></div>
+                            <div className="text-sm text-gray-500 mt-1">Output: <span className={out > 0 ? "text-orange-400" : "text-gray-600"}>{Number(out || 0).toFixed(0)}%</span></div>
                         </div>
                         <div className="text-right">
                             <div className="text-sm text-gray-400">Setpoint</div>
@@ -1916,36 +1980,72 @@
             );
         }
 
-        function LoadCellCard({ weight, onTare, onCalibrate }) {
+        function LoadCellCard({ weight, ready, calibrated, onTare, onCalibrate }) {
             const [knownWeight, setKnownWeight] = useState("");
+            const [tareConfirmed, setTareConfirmed] = useState(false);
+            const [busy, setBusy] = useState(false);
+            const validWeight = ready && calibrated && Number.isFinite(Number(weight));
+            const displayStatus = !ready
+                ? "UNAVAILABLE"
+                : (!calibrated ? "NOT CALIBRATED" : (validWeight ? null : "INVALID WEIGHT"));
+
+            const tare = async () => {
+                setBusy(true);
+                try {
+                    await onTare();
+                    setTareConfirmed(true);
+                } catch (error) {
+                    setTareConfirmed(false);
+                    window.alert(`Tare rejected: ${error.message}`);
+                } finally {
+                    setBusy(false);
+                }
+            };
+
+            const calibrate = async () => {
+                const value = Number(knownWeight);
+                if (!tareConfirmed) {
+                    window.alert("Tare the empty scale successfully before calibration.");
+                    return;
+                }
+                if (!Number.isFinite(value) || value <= 0) {
+                    window.alert("Please enter a valid known weight in Kg.");
+                    return;
+                }
+                setBusy(true);
+                try {
+                    await onCalibrate(value);
+                    setKnownWeight("");
+                } catch (error) {
+                    window.alert(`Calibration rejected: ${error.message}`);
+                } finally {
+                    setBusy(false);
+                }
+            };
 
             return (
                 <div className="bg-gray-800 p-4 rounded-lg border border-teal-500 shadow shadow-teal-900/20 relative overflow-hidden">
                     <h3 className="text-lg font-semibold text-teal-400 mb-2">Weight Scale</h3>
                     <div className="flex justify-between items-end mb-4">
                         <div>
-                            <div className="text-4xl font-mono">{(weight || 0).toFixed(3)}</div>
-                            <div className="text-sm text-gray-500">Kg</div>
+                            <div className={`font-mono ${validWeight ? 'text-4xl' : 'text-xl text-red-400 font-bold'}`}>
+                                {validWeight ? Number(weight).toFixed(3) : displayStatus}
+                            </div>
+                            <div className="text-sm text-gray-500">{validWeight ? 'Kg' : 'Load cell interlock active'}</div>
                         </div>
                     </div>
                     <div className="flex flex-col gap-2">
                         <button
                             className="bg-teal-600 px-3 py-1 rounded hover:bg-teal-500 font-bold tracking-wider"
-                            onClick={onTare}>TARE</button>
+                            onClick={tare} disabled={!ready || busy}>TARE</button>
                         <div className="flex gap-2">
                             <input type="number" placeholder="Known (Kg)"
                                 className="bg-gray-900 border border-gray-600 rounded px-2 py-1 w-full text-white focus:border-teal-500 outline-none text-sm"
                                 value={knownWeight} onChange={(e) => setKnownWeight(e.target.value)} />
                             <button
                                 className="bg-orange-600 px-3 py-1 rounded hover:bg-orange-500 text-sm font-bold"
-                                onClick={() => {
-                                    if(knownWeight && parseFloat(knownWeight) > 0) {
-                                        onCalibrate(parseFloat(knownWeight));
-                                        setKnownWeight("");
-                                    } else {
-                                        alert("Please enter a valid known weight in Kg.");
-                                    }
-                                }}>CALIBRATE</button>
+                                disabled={!ready || !tareConfirmed || busy}
+                                onClick={calibrate}>CALIBRATE</button>
                         </div>
                     </div>
                 </div>
@@ -1994,7 +2094,7 @@
                         </div>
                         <div className="flex justify-between items-center">
                             <span className="text-gray-400">Speed</span>
-                            <span className="text-gray-200">{pump?.speed || 0} / 350 RPM</span>
+                            <span className="text-gray-200">{pump?.speed || 0} / 240 RPM</span>
                         </div>
                     </div>
 
@@ -2020,7 +2120,7 @@
                             </div>
                             <div className="flex justify-between items-center">
                                 <label className="text-sm text-gray-400">Speed</label>
-                                <input type="number" min="0" max="350" className="bg-gray-900 border border-gray-600 rounded px-2 py-1 text-white text-sm w-20"
+                                <input type="number" min="0" max="240" className="bg-gray-900 border border-gray-600 rounded px-2 py-1 text-white text-sm w-20"
                                     value={localSpeed} onChange={(e) => setLocalSpeed(e.target.value)} />
                             </div>
                             <div className="flex gap-2 mt-2">
@@ -2044,7 +2144,7 @@
                             </div>
                             <div className="flex justify-between items-center">
                                 <label className="text-sm text-gray-400">Rec. RPM</label>
-                                <input type="number" min="0" max="350" className="bg-gray-900 border border-gray-600 rounded px-2 py-1 text-white text-sm w-20"
+                                <input type="number" min="0" max="240" className="bg-gray-900 border border-gray-600 rounded px-2 py-1 text-white text-sm w-20"
                                     value={localSpeed} onChange={(e) => setLocalSpeed(e.target.value)} />
                             </div>
                             <div className="flex justify-between items-center">

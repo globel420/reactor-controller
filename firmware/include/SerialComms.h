@@ -25,7 +25,8 @@ enum ControlState {
 
 struct Command {
   CommandType type;
-  int zone; // 0=Gas, 1=Vap, 2=Reactor
+  uint16_t requestId;
+  int zone; // 0=feedstock preheater, 1=liquid reactor, 2=gas reactor
   float value;
   int state;
   int dir;
@@ -38,11 +39,16 @@ public:
   Command checkCommand();
   void sendTelemetry(const SensorData &sensors, HeaterController &heaters,
                      ControlState state, unsigned long uptime);
+  void sendAck(uint16_t requestId, CommandType type);
+  void sendNack(uint16_t requestId, CommandType type, const char *reason);
   void sendError(const String &msg);
 
 private:
   char _readBuffer[256];
   int _bufIndex;
+  bool _discardUntilNewline;
+
+  static const char *commandTypeName(CommandType type);
 };
 
 #endif
