@@ -1,14 +1,14 @@
 # Agent Progress
 
 ## Current Resume Point
-- Last updated: 2026-10-20 02:35
-- Active goal: Publish an installable immutable v2.1.0-rc.1 for fresh-Pi acceptance without prematurely publishing final v2.1.0.
-- Current status: Release builder and tag workflow now support exact tag-pinned prerelease bootstraps and GitHub prerelease publication.
-- Files touched: scripts/build_production_release.py, scripts/tests/test_build_production_release.py, .github/workflows/release.yml, .github/RELEASE_PREREQUISITES.md, README.md, AGENT_PROGRESS.md
-- Commands run: 191/191 Python tests passed; release builder tests 14/14; Ruff and actionlint passed; v2.1.0-rc.1 asset build and every SHA256SUMS entry passed; generated bootstrap reports v2.1.0-rc.1.
-- Validation state: Prerelease assets remain production-only; final v2.1.0 README command is unchanged and will remain unpublished until fresh-Pi acceptance.
-- Next action: Commit/push prerelease support, merge draft PR to main, tag v2.1.0-rc.1, let Actions build images, make first GHCR packages public if required, rerun, and verify anonymous release installation assets.
-- Blockers: First GHCR package visibility can only be changed after packages exist. Fresh-Pi and physical hardware evidence remain pending.
+- Last updated: 2026-10-20 05:53
+- Active goal: Publish a verified one-command v2.1.0 installer for a fresh Raspberry Pi
+- Current status: Required ARM64 release-gate repair is validated and ready to merge
+- Files touched: AGENT_PROGRESS.md, .github/workflows/release.yml, scripts/tests/test_build_production_release.py
+- Commands run: anonymous ARM64 pulls; release-builder tests 15/15; bootstrap assertions 82/82; Ruff and diff checks
+- Validation state: Both public images pull for linux/arm64; workflow now requests the correct platform; no v2.1.0 tag or release exists yet
+- Next action: Merge the fix, tag main as v2.1.0, wait for the release workflow, then anonymously verify both installer downloads
+- Blockers: none for publication; the user's Pi will provide the first live installation run
 - Do not repeat: none recorded
 
 ## Chapter Log
@@ -99,3 +99,13 @@
 - Validation: Prerelease assets remain production-only; final v2.1.0 README command is unchanged and will remain unpublished until fresh-Pi acceptance.
 - Next: Commit/push prerelease support, merge draft PR to main, tag v2.1.0-rc.1, let Actions build images, make first GHCR packages public if required, rerun, and verify anonymous release installation assets.
 - Blockers: First GHCR package visibility can only be changed after packages exist. Fresh-Pi and physical hardware evidence remain pending.
+
+### 2026-10-20 05:53 - Repair public installer release
+- Goal: Publish a verified one-command v2.1.0 installer for a fresh Raspberry Pi
+- Progress: Confirmed the public command 404s because no GitHub Release exists; identified ARM64 anonymous-pull workflow defect before publication; both GHCR packages are public
+- Decisions: none recorded
+- Files changed: AGENT_PROGRESS.md, .github/workflows/release.yml
+- Commands/results: fetched origin; confirmed release tree equals merged main; inspected canceled Actions run 39401914987; anonymous Registry API returned 200 for both image tags
+- Validation: No v2.1.0 tag or release exists; v2.1.0-rc.1 workflow validation passed but publication did not run
+- Next: Patch ARM64 pull gate, run release validation, merge fix, publish and verify prerelease assets, then complete fresh-Pi acceptance before final immutable tag
+- Blockers: Actual Pi installation must be exercised from the published prerelease before final v2.1.0 is claimed working
