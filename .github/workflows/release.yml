@@ -239,8 +239,8 @@ jobs:
           for reference in \
             "${{ steps.refs.outputs.supervisory }}" \
             "${{ steps.refs.outputs.grafana }}"; do
-            if ! docker pull "$reference"; then
-              echo "::error::${reference} is not anonymously pullable. Set both GHCR packages to Public, then re-run this tag workflow. See .github/RELEASE_PREREQUISITES.md."
+            if ! docker pull --platform linux/arm64 "$reference"; then
+              echo "::error::${reference} could not be pulled anonymously for linux/arm64. Confirm that both GHCR packages are Public and that the tag contains an ARM64 manifest, then re-run this tag workflow. See .github/RELEASE_PREREQUISITES.md."
               exit 1
             fi
           done

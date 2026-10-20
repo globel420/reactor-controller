@@ -221,6 +221,14 @@ class ProductionReleaseTests(unittest.TestCase):
 
 
 class RepositoryPayloadContractTests(unittest.TestCase):
+    def test_release_workflow_pulls_arm64_images_with_explicit_platform(self) -> None:
+        workflow = (REPO_ROOT / ".github/workflows/release.yml").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn('docker pull --platform linux/arm64 "$reference"', workflow)
+        self.assertNotIn('docker pull "$reference"', workflow)
+
     def test_tracked_allowlists_are_exact_regular_production_files(self) -> None:
         runtime_paths = release.read_allowlist(REPO_ROOT, release.RUNTIME_ALLOWLIST)
         firmware_paths = release.read_allowlist(REPO_ROOT, release.FIRMWARE_ALLOWLIST)
