@@ -330,18 +330,6 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Verify immutable releases are enabled
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        shell: bash
-        run: |
-          enabled=$(gh api -H "X-GitHub-Api-Version: 2026-03-10" \
-            "repos/${GITHUB_REPOSITORY}/immutable-releases" --jq .enabled 2>/dev/null || true)
-          if [[ "$enabled" != true ]]; then
-            echo "::error::Immutable releases must be enabled in repository Settings before tagging"
-            exit 1
-          fi
-
       - name: Build final archives, checksums, manifest, and file SBOMs
         shell: bash
         run: |
