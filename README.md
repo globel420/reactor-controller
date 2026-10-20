@@ -40,7 +40,7 @@ Internet through Ethernet or preconfigured Wi-Fi. A stock OS cannot create the
 Log into the Pi locally or over SSH, then paste this one line:
 
 ```bash
-sudo apt-get update && sudo apt-get install -y curl ca-certificates && cd /tmp && curl --proto '=https' --tlsv1.2 -fLO https://github.com/globel420/reactor-controller/releases/download/v2.1.0/reactor-bootstrap.sh -O https://github.com/globel420/reactor-controller/releases/download/v2.1.0/SHA256SUMS && grep ' reactor-bootstrap.sh$' SHA256SUMS | sha256sum -c - && sudo bash /tmp/reactor-bootstrap.sh
+sudo apt-get update && sudo apt-get install -y curl ca-certificates && cd /tmp && curl --proto '=https' --tlsv1.2 -fLO https://github.com/globel420/reactor-controller/releases/download/v2.1.1/reactor-bootstrap.sh -O https://github.com/globel420/reactor-controller/releases/download/v2.1.1/SHA256SUMS && grep ' reactor-bootstrap.sh$' SHA256SUMS | sha256sum -c - && sudo bash /tmp/reactor-bootstrap.sh
 ```
 
 The interactive installer updates Trixie, installs Docker and Tailscale from
@@ -297,7 +297,7 @@ uv run --python 3.12 --with-requirements supervisory/requirements.txt --with pyt
   pytest supervisory/tests scripts/tests host/tests deploy/production/tests -v
 ```
 
-Current `v2.1.0` release-candidate gate: **191/191 Python tests** plus
+Current `v2.1.1` release gate: **192/192 Python tests** plus
 **82/82 bootstrap assertions**, before firmware, Compose, image, and package
 smokes.
 

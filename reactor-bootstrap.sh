@@ -8,7 +8,7 @@ set -Eeuo pipefail
 umask 077
 
 readonly INSTALLER_SCHEMA="reactor-pi-bootstrap-v1"
-readonly RELEASE_VERSION="v2.1.0"
+readonly RELEASE_VERSION="v2.1.1"
 readonly RELEASE_REPOSITORY="globel420/reactor-controller"
 readonly RELEASE_BASE_URL="https://github.com/${RELEASE_REPOSITORY}/releases/download/${RELEASE_VERSION}"
 readonly RUNTIME_ASSET="reactor-controller-production-${RELEASE_VERSION}.tar.gz"
@@ -701,7 +701,10 @@ stage_reactor_account() {
     local supplemental_groups="sudo,dialout,docker"
     local recovery_user=${SUDO_USER:-}
     local sudoers_file=/etc/sudoers.d/99-reactor-controller
-    local ssh_dropin=/etc/ssh/sshd_config.d/00-reactor-controller.conf
+    local ssh_dropin=/etc/ssh/sshd_config.d/00-000-reactor-controller.conf
+    local sshd_main=/etc/ssh/sshd_config
+    local reactor_ssh_effective
+    local root_ssh_effective
 
     if [[ -z "$recovery_user" || "$recovery_user" == root ]]; then
         recovery_user=$(getent passwd | awk -F: '$3 >= 1000 && $3 < 65534 && $1 != "reactor" {print $1; exit}')
@@ -744,6 +747,13 @@ stage_reactor_account() {
     visudo -cf "$sudoers_file" >/dev/null
 
     install -d -o root -g root -m 0755 /etc/ssh/sshd_config.d
+    [[ -f "$sshd_main" && ! -L "$sshd_main" ]] || die "OpenSSH server configuration is missing or unsafe: ${sshd_main}"
+    sed -Ei \
+        -e 's/^[#[:space:]]*PasswordAuthentication[[:space:]]+.*/PasswordAuthentication yes/' \
+        -e 's/^[#[:space:]]*PubkeyAuthentication[[:space:]]+.*/PubkeyAuthentication yes/' \
+        -e 's/^[#[:space:]]*PermitRootLogin[[:space:]]+.*/PermitRootLogin no/' \
+        -e 's/^[#[:space:]]*KbdInteractiveAuthentication[[:space:]]+.*/KbdInteractiveAuthentication no/' \
+        "$sshd_main"
     cat > "$ssh_dropin" <<'EOF'
 # Reactor Controller: retain password and key SSH for the dedicated admin.
 PasswordAuthentication yes
@@ -753,10 +763,14 @@ KbdInteractiveAuthentication no
 EOF
     chmod 0644 "$ssh_dropin"
     sshd -t
-    sshd -T -C "user=${REACTOR_USER},host=$(hostname),addr=127.0.0.1" |
-        grep -Fxq 'passwordauthentication yes' || die "OpenSSH effective configuration did not enable password authentication."
-    sshd -T -C "user=root,host=$(hostname),addr=127.0.0.1" |
-        grep -Fxq 'permitrootlogin no' || die "OpenSSH effective configuration did not disable root login."
+    reactor_ssh_effective=$(sshd -T -C "user=${REACTOR_USER},host=$(hostname),addr=127.0.0.1") ||
+        die "OpenSSH could not resolve the reactor account configuration."
+    grep -Fxq 'passwordauthentication yes' <<< "$reactor_ssh_effective" ||
+        die "OpenSSH effective configuration did not enable password authentication."
+    root_ssh_effective=$(sshd -T -C "user=root,host=$(hostname),addr=127.0.0.1") ||
+        die "OpenSSH could not resolve the root account configuration."
+    grep -Fxq 'permitrootlogin no' <<< "$root_ssh_effective" ||
+        die "OpenSSH effective configuration did not disable root login."
     systemctl enable ssh.service
     systemctl restart ssh.service
 
