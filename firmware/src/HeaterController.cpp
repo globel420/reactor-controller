@@ -22,17 +22,17 @@ HeaterController::HeaterController() {
 }
 
 void HeaterController::begin() {
-  // Load the safe LOW value into each output latch before enabling its driver.
-  digitalWrite(PIN_HEATER_FEEDSTOCK_PREHEATER, LOW);
-  digitalWrite(PIN_HEATER_LIQUID_REACTOR, LOW);
-  digitalWrite(PIN_HEATER_GAS_REACTOR, LOW);
+  // Load the configured safe value into each latch before enabling its driver.
+  digitalWrite(PIN_HEATER_FEEDSTOCK_PREHEATER, HEATER_OFF_LEVEL);
+  digitalWrite(PIN_HEATER_LIQUID_REACTOR, HEATER_OFF_LEVEL);
+  digitalWrite(PIN_HEATER_GAS_REACTOR, HEATER_OFF_LEVEL);
   pinMode(PIN_HEATER_FEEDSTOCK_PREHEATER, OUTPUT);
   pinMode(PIN_HEATER_LIQUID_REACTOR, OUTPUT);
   pinMode(PIN_HEATER_GAS_REACTOR, OUTPUT);
 
-  digitalWrite(PIN_HEATER_FEEDSTOCK_PREHEATER, LOW);
-  digitalWrite(PIN_HEATER_LIQUID_REACTOR, LOW);
-  digitalWrite(PIN_HEATER_GAS_REACTOR, LOW);
+  digitalWrite(PIN_HEATER_FEEDSTOCK_PREHEATER, HEATER_OFF_LEVEL);
+  digitalWrite(PIN_HEATER_LIQUID_REACTOR, HEATER_OFF_LEVEL);
+  digitalWrite(PIN_HEATER_GAS_REACTOR, HEATER_OFF_LEVEL);
 
   // Limit output to 0-WINDOW_SIZE (time proportional)
   _pidPreheater->SetOutputLimits(0, WINDOW_SIZE);
@@ -57,9 +57,9 @@ void HeaterController::setEnabled(bool enabled) {
   // positive PID output into effectively continuous heater power.
   if (enabled == _enabled) {
     if (!enabled) {
-      digitalWrite(PIN_HEATER_FEEDSTOCK_PREHEATER, LOW);
-      digitalWrite(PIN_HEATER_LIQUID_REACTOR, LOW);
-      digitalWrite(PIN_HEATER_GAS_REACTOR, LOW);
+      digitalWrite(PIN_HEATER_FEEDSTOCK_PREHEATER, HEATER_OFF_LEVEL);
+      digitalWrite(PIN_HEATER_LIQUID_REACTOR, HEATER_OFF_LEVEL);
+      digitalWrite(PIN_HEATER_GAS_REACTOR, HEATER_OFF_LEVEL);
     }
     return;
   }
@@ -67,9 +67,9 @@ void HeaterController::setEnabled(bool enabled) {
   _enabled = enabled;
   if (!enabled) {
     // Force outputs off immediately
-    digitalWrite(PIN_HEATER_FEEDSTOCK_PREHEATER, LOW);
-    digitalWrite(PIN_HEATER_LIQUID_REACTOR, LOW);
-    digitalWrite(PIN_HEATER_GAS_REACTOR, LOW);
+    digitalWrite(PIN_HEATER_FEEDSTOCK_PREHEATER, HEATER_OFF_LEVEL);
+    digitalWrite(PIN_HEATER_LIQUID_REACTOR, HEATER_OFF_LEVEL);
+    digitalWrite(PIN_HEATER_GAS_REACTOR, HEATER_OFF_LEVEL);
 
     _pidPreheater->SetMode(MANUAL);
     _pidLiquid->SetMode(MANUAL);
@@ -88,9 +88,9 @@ void HeaterController::setEnabled(bool enabled) {
 
 void HeaterController::update(float tempPreheater, float tempLiquid, float tempGas, float tempGasExt) {
   if (!_enabled) {
-    digitalWrite(PIN_HEATER_FEEDSTOCK_PREHEATER, LOW);
-    digitalWrite(PIN_HEATER_LIQUID_REACTOR, LOW);
-    digitalWrite(PIN_HEATER_GAS_REACTOR, LOW);
+    digitalWrite(PIN_HEATER_FEEDSTOCK_PREHEATER, HEATER_OFF_LEVEL);
+    digitalWrite(PIN_HEATER_LIQUID_REACTOR, HEATER_OFF_LEVEL);
+    digitalWrite(PIN_HEATER_GAS_REACTOR, HEATER_OFF_LEVEL);
     return;
   }
 
@@ -104,14 +104,14 @@ void HeaterController::update(float tempPreheater, float tempLiquid, float tempG
   auto processZone = [&](float temp, double sp, PID *pid, double &outVal, int pin) {
     if (isnan(temp) || sp <= 0.0) {
       outVal = 0.0;
-      digitalWrite(pin, LOW);
+      digitalWrite(pin, HEATER_OFF_LEVEL);
       return;
     }
 
     if (temp >= sp) {
       // STRICT OVER-TEMP CUTOFF: Shutdown heater immediately when at or above setpoint
       outVal = 0.0;
-      digitalWrite(pin, LOW);
+      digitalWrite(pin, HEATER_OFF_LEVEL);
       // Clear integral windup
       pid->SetMode(MANUAL);
       pid->SetMode(AUTOMATIC);
@@ -132,7 +132,7 @@ void HeaterController::update(float tempPreheater, float tempLiquid, float tempG
   // Gas Reactor External Over-temp Hard Safety Limit (110% of setpoint)
   if (!isnan(tempGasExt) && _spGas > 0.0 && tempGasExt > (_spGas * 1.10f)) {
     _outGas = 0.0;
-    digitalWrite(PIN_HEATER_GAS_REACTOR, LOW);
+    digitalWrite(PIN_HEATER_GAS_REACTOR, HEATER_OFF_LEVEL);
     _pidGas->SetMode(MANUAL);
     _pidGas->SetMode(AUTOMATIC);
   } else {
@@ -144,8 +144,8 @@ void HeaterController::applyTimeProportional(int pin, double output) {
   unsigned long now = millis();
   unsigned long elapsed = now - _windowStartTime;
   if (output > 0 && elapsed < (unsigned long)output) {
-    digitalWrite(pin, HIGH);
+    digitalWrite(pin, HEATER_ON_LEVEL);
   } else {
-    digitalWrite(pin, LOW);
+    digitalWrite(pin, HEATER_OFF_LEVEL);
   }
 }

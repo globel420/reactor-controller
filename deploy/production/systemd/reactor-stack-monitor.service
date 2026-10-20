@@ -1,0 +1,13 @@
+[Unit]
+Description=Reactor Controller preflighted container crash recovery
+BindsTo=reactor-stack.service
+After=reactor-stack.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/sbin/reactorctl _stack-monitor
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

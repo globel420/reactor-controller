@@ -38,16 +38,21 @@ UNO_PIN_DEFAULTS = {
     "UNO_PIN_DIRECTION": "10",
 }
 
+MEGA_BEHAVIOR_DEFAULTS = {"MEGA_HEATER_ACTIVE_HIGH": "1"}
+UNO_BEHAVIOR_DEFAULTS = {"UNO_ENABLE_ACTIVE_LOW": "1"}
 SHARED_DEFAULTS = {"MCU_HEARTBEAT_TIMEOUT_MS": "3000"}
-DEFAULTS = {**MEGA_PIN_DEFAULTS, **UNO_PIN_DEFAULTS, **SHARED_DEFAULTS}
+MEGA_DEFAULTS = {**MEGA_PIN_DEFAULTS, **MEGA_BEHAVIOR_DEFAULTS}
+UNO_DEFAULTS = {**UNO_PIN_DEFAULTS, **UNO_BEHAVIOR_DEFAULTS}
+DEFAULTS = {**MEGA_DEFAULTS, **UNO_DEFAULTS, **SHARED_DEFAULTS}
 ALLOWLIST = frozenset(DEFAULTS)
-MODE_KEY = "COMPOSE_PROFILES"
-PARSE_KEYS = ALLOWLIST | {MODE_KEY}
-FINGERPRINT_SCHEMA = "reactor-firmware-config-v1"
+LEGACY_MODE_KEY = "COMPOSE_PROFILES"
+MODE_KEY = "REACTOR_MODE"
+PARSE_KEYS = ALLOWLIST | {LEGACY_MODE_KEY, MODE_KEY}
+FINGERPRINT_SCHEMA = "reactor-firmware-config-v2"
 FINGERPRINT_ALGORITHM = "fnv1a-32"
 TARGET_KEYS = {
-    "mega": (*MEGA_PIN_DEFAULTS, *SHARED_DEFAULTS),
-    "uno": (*UNO_PIN_DEFAULTS, *SHARED_DEFAULTS),
+    "mega": (*MEGA_DEFAULTS, *SHARED_DEFAULTS),
+    "uno": (*UNO_DEFAULTS, *SHARED_DEFAULTS),
 }
 
 _DECIMAL_RE = re.compile(r"^[0-9]+$")
@@ -153,6 +158,10 @@ def validate_config(config: Mapping[str, str]) -> None:
     if timeout_ms != 3000:
         raise FirmwareEnvError("MCU_HEARTBEAT_TIMEOUT_MS must be exactly 3000")
 
+    for key in (*MEGA_BEHAVIOR_DEFAULTS, *UNO_BEHAVIOR_DEFAULTS):
+        if config[key] not in {"0", "1"}:
+            raise FirmwareEnvError(f"{key} must be 0 or 1")
+
     _reject_pin_collisions(config, MEGA_PIN_DEFAULTS, _normalized_mega_pin)
     _reject_pin_collisions(config, UNO_PIN_DEFAULTS, _normalized_uno_pin)
 
@@ -198,6 +207,8 @@ def normalize_config_values(values: Mapping[str, str]) -> dict[str, str]:
     for key in UNO_PIN_DEFAULTS:
         if _DECIMAL_RE.fullmatch(config[key]):
             config[key] = str(int(config[key]))
+    for key in (*MEGA_BEHAVIOR_DEFAULTS, *UNO_BEHAVIOR_DEFAULTS):
+        config[key] = str(int(config[key]))
     config["MCU_HEARTBEAT_TIMEOUT_MS"] = str(
         int(config["MCU_HEARTBEAT_TIMEOUT_MS"])
     )
@@ -223,13 +234,21 @@ def resolve_config_details(
     elif override:
         raise FirmwareEnvError(f"REACTOR_ENV_FILE does not exist: {env_path}")
 
-    file_mode = parsed.pop(MODE_KEY, "simulation")
+    explicit_mode = parsed.pop(MODE_KEY, None)
+    legacy_mode = parsed.pop(LEGACY_MODE_KEY, None)
+    if explicit_mode and legacy_mode and explicit_mode.lower() != legacy_mode.lower():
+        raise FirmwareEnvError(
+            f"{MODE_KEY} and {LEGACY_MODE_KEY} must select the same mode"
+        )
+    file_mode = explicit_mode or legacy_mode or "simulation"
     # The selected file is authoritative. Ambient Compose/profile/pin values
     # must not silently change the firmware built from that file.
     mode = file_mode.lower()
-    if mode not in {"simulation", "hardware"}:
-        raise FirmwareEnvError("COMPOSE_PROFILES must be simulation or hardware")
-    if mode == "hardware":
+    if mode not in {"simulation", "commissioning", "hardware"}:
+        raise FirmwareEnvError(
+            "REACTOR_MODE must be simulation, commissioning, or hardware"
+        )
+    if mode in {"commissioning", "hardware"}:
         missing = sorted(ALLOWLIST - parsed.keys())
         if missing:
             raise FirmwareEnvError(

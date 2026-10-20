@@ -1,0 +1,146 @@
+name: reactor-controller
+
+x-supervisory-common: &supervisory-common
+  image: "${SUPERVISORY_IMAGE:?Set SUPERVISORY_IMAGE to the release digest-pinned image}"
+  init: true
+  user: "${REACTOR_UID:?Set REACTOR_UID}:${REACTOR_GID:?Set REACTOR_GID}"
+  ports:
+    - "8000:8000"
+  volumes:
+    - "${REACTOR_DATA_DIR:?Set REACTOR_DATA_DIR}/supervisory:/app/data"
+  environment: &supervisory-environment
+    APP_ENV: production
+    PYTHONDONTWRITEBYTECODE: "1"
+    DATABASE_URL: sqlite:////app/data/reactor_logs.db
+    SAFETY_LATCH_FILE: /app/data/safety_latched
+    ALARM_CONFIG_FILE: /app/data/alarm_config.json
+    PI_BUZZER_GPIO: "${PI_BUZZER_GPIO:?Set PI_BUZZER_GPIO}"
+    PI_BUZZER_ACTIVE_HIGH: "${PI_BUZZER_ACTIVE_HIGH:?Set PI_BUZZER_ACTIVE_HIGH}"
+    PI_BUZZER_EXTERNAL_SAFE_PULL_CONFIRMED: "${PI_BUZZER_EXTERNAL_SAFE_PULL_CONFIRMED:?Confirm buzzer safe pull configuration}"
+    BUZZER_BACKEND: host
+    HOST_SYSTEM_URL: http://host.docker.internal:8001
+    ALLOW_MOCK_GPIO: "false"
+    MCU_HEARTBEAT_TIMEOUT_MS: "${MCU_HEARTBEAT_TIMEOUT_MS:?Set MCU_HEARTBEAT_TIMEOUT_MS}"
+    SAFETY_RESET_HYSTERESIS_C: "${SAFETY_RESET_HYSTERESIS_C:-2.0}"
+    MEGA_PIN_SPI_SCK: "${MEGA_PIN_SPI_SCK:?Set complete MCU pin map}"
+    MEGA_PIN_SPI_MISO: "${MEGA_PIN_SPI_MISO:?Set complete MCU pin map}"
+    MEGA_PIN_TC_FEED_RES: "${MEGA_PIN_TC_FEED_RES:?Set complete MCU pin map}"
+    MEGA_PIN_TC_HOUSING: "${MEGA_PIN_TC_HOUSING:?Set complete MCU pin map}"
+    MEGA_PIN_RTD_PREHEATER: "${MEGA_PIN_RTD_PREHEATER:?Set complete MCU pin map}"
+    MEGA_PIN_RTD_LIQUID: "${MEGA_PIN_RTD_LIQUID:?Set complete MCU pin map}"
+    MEGA_PIN_RTD_GAS_INT: "${MEGA_PIN_RTD_GAS_INT:?Set complete MCU pin map}"
+    MEGA_PIN_RTD_GAS_EXT: "${MEGA_PIN_RTD_GAS_EXT:?Set complete MCU pin map}"
+    MEGA_PIN_H2_SENSOR: "${MEGA_PIN_H2_SENSOR:?Set complete MCU pin map}"
+    MEGA_PIN_HX711_SCK: "${MEGA_PIN_HX711_SCK:?Set complete MCU pin map}"
+    MEGA_PIN_HX711_DT: "${MEGA_PIN_HX711_DT:?Set complete MCU pin map}"
+    MEGA_PIN_HEATER_PREHEATER: "${MEGA_PIN_HEATER_PREHEATER:?Set complete MCU pin map}"
+    MEGA_PIN_HEATER_LIQUID: "${MEGA_PIN_HEATER_LIQUID:?Set complete MCU pin map}"
+    MEGA_PIN_HEATER_GAS: "${MEGA_PIN_HEATER_GAS:?Set complete MCU pin map}"
+    MEGA_HEATER_ACTIVE_HIGH: "${MEGA_HEATER_ACTIVE_HIGH:?Set heater output polarity}"
+    MEGA_HEATER_EXTERNAL_SAFE_PULL_CONFIRMED: "${MEGA_HEATER_EXTERNAL_SAFE_PULL_CONFIRMED:?Confirm heater safe pulls}"
+    UNO_PIN_ENABLE: "${UNO_PIN_ENABLE:?Set complete MCU pin map}"
+    UNO_PIN_STEP: "${UNO_PIN_STEP:?Set complete MCU pin map}"
+    UNO_PIN_DIRECTION: "${UNO_PIN_DIRECTION:?Set complete MCU pin map}"
+    UNO_ENABLE_ACTIVE_LOW: "${UNO_ENABLE_ACTIVE_LOW:?Set pump enable polarity}"
+    UNO_ENABLE_EXTERNAL_SAFE_PULL_CONFIRMED: "${UNO_ENABLE_EXTERNAL_SAFE_PULL_CONFIRMED:?Confirm pump safe pull}"
+  extra_hosts:
+    - "host.docker.internal:host-gateway"
+  read_only: true
+  tmpfs:
+    - /tmp:size=16m,mode=1777
+  cap_drop:
+    - ALL
+  security_opt:
+    - no-new-privileges:true
+  # systemd's reactor-stack-monitor is the sole crash-recovery authority so
+  # every restart re-runs hardware/commissioning preflight first.
+  restart: "no"
+  stop_grace_period: 30s
+
+services:
+  # Safe default for a new installation. There are no device mappings and the
+  # application rejects physical control while reporting readiness as false.
+  supervisory-commissioning:
+    <<: *supervisory-common
+    profiles: [commissioning]
+    environment:
+      <<: *supervisory-environment
+      REACTOR_MODE: commissioning
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/live', timeout=3).read()"
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  # Physical mode is selected only by reactorctl after commissioning evidence
+  # and exact device/config hashes have been verified.
+  supervisory-hardware:
+    <<: *supervisory-common
+    profiles: [hardware]
+    environment:
+      <<: *supervisory-environment
+      REACTOR_MODE: hardware
+      SERIAL_PORT: /dev/sensor_arduino
+      PUMP_PORT: /dev/pump_arduino
+    devices:
+      - "${SENSOR_DEVICE_HOST:?Set SENSOR_DEVICE_HOST}:/dev/sensor_arduino:rwm"
+      - "${PUMP_DEVICE_HOST:?Set PUMP_DEVICE_HOST}:/dev/pump_arduino:rwm"
+    group_add:
+      - "${SERIAL_DEVICE_GID:?Set SERIAL_DEVICE_GID}"
+    healthcheck:
+      # Docker owns process/device liveness only. reactorctl evaluates
+      # operational readiness and can fall back to commissioning; Docker must
+      # not restart or hide a live safety-latched supervisor.
+      test:
+        - CMD-SHELL
+        - >-
+          test -c /dev/sensor_arduino &&
+          test -c /dev/pump_arduino &&
+          python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/live', timeout=3).read()"
+      interval: 10s
+      timeout: 5s
+      retries: 18
+      start_period: 30s
+
+  grafana:
+    image: "${GRAFANA_IMAGE:?Set GRAFANA_IMAGE to the release digest-pinned image}"
+    profiles: [commissioning, hardware]
+    user: "472:0"
+    # The host data directory is reactor:reactor 0770. Grant only that numeric
+    # group so Grafana can traverse/read the SQLite DB through its read-only
+    # mount without running as root or opening the directory to other users.
+    group_add:
+      - "${REACTOR_GID:?Set REACTOR_GID}"
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ALLOW_EMBEDDING: "true"
+      GF_SECURITY_ADMIN_USER: "${GRAFANA_ADMIN_USER:-admin}"
+      GF_SECURITY_ADMIN_PASSWORD: "${GRAFANA_ADMIN_PASSWORD:?Set GRAFANA_ADMIN_PASSWORD}"
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+      GF_PLUGINS_PREINSTALL_DISABLED: "true"
+      GF_PATHS_PLUGINS: /var/lib/grafana-plugins
+    volumes:
+      - "${REACTOR_DATA_DIR:?Set REACTOR_DATA_DIR}/supervisory:/data:ro"
+      - "${REACTOR_DATA_DIR:?Set REACTOR_DATA_DIR}/grafana:/var/lib/grafana"
+      - "./grafana/provisioning:/etc/grafana/provisioning:ro"
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    restart: "no"
+    stop_grace_period: 30s
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - "wget -q --spider http://127.0.0.1:3000/api/health || exit 1"
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s

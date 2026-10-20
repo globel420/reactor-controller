@@ -158,9 +158,12 @@ services:
       MEGA_PIN_HEATER_PREHEATER: "${MEGA_PIN_HEATER_PREHEATER:?Set complete MCU pin map in .env}"
       MEGA_PIN_HEATER_LIQUID: "${MEGA_PIN_HEATER_LIQUID:?Set complete MCU pin map in .env}"
       MEGA_PIN_HEATER_GAS: "${MEGA_PIN_HEATER_GAS:?Set complete MCU pin map in .env}"
+      MEGA_HEATER_ACTIVE_HIGH: "${MEGA_HEATER_ACTIVE_HIGH:?Set heater polarity in .env}"
       UNO_PIN_ENABLE: "${UNO_PIN_ENABLE:?Set complete MCU pin map in .env}"
       UNO_PIN_STEP: "${UNO_PIN_STEP:?Set complete MCU pin map in .env}"
       UNO_PIN_DIRECTION: "${UNO_PIN_DIRECTION:?Set complete MCU pin map in .env}"
+      UNO_ENABLE_ACTIVE_LOW: "${UNO_ENABLE_ACTIVE_LOW:?Set pump-enable polarity in .env}"
+      PI_BUZZER_ACTIVE_HIGH: "${PI_BUZZER_ACTIVE_HIGH:-true}"
     devices:
       - "${SENSOR_DEVICE_HOST:?Set SENSOR_DEVICE_HOST in .env}:/dev/sensor_arduino:rwm"
       - "${PUMP_DEVICE_HOST:?Set PUMP_DEVICE_HOST in .env}:/dev/pump_arduino:rwm"

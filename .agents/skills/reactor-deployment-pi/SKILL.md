@@ -1,118 +1,92 @@
 ---
 name: reactor-deployment-pi
 description: >-
-  Procedures for deploying, configuring, and updating the headless Raspberry Pi 4 reactor rig:
-  Tailscale mesh VPN, field Wi-Fi hotspot daemon, systemd services, and Docker Compose lifecycle.
+  Deploy, configure, update, and recover the production-only Raspberry Pi 4/5
+  Reactor Controller using immutable releases, reactorctl, Tailscale, dynamic
+  field Wi-Fi, systemd, and Docker Compose.
 ---
 
-# Raspberry Pi Deployment & Field Operations Runbook
+# Raspberry Pi Production Deployment
 
-Use this skill when deploying updates to the physical Raspberry Pi 4 SBC, configuring Tailscale remote mesh access, or troubleshooting the standalone Wi-Fi hotspot.
+Use this skill for fresh Pi installation, installed-service maintenance,
+Tailscale enrollment, Wi-Fi/hotspot recovery, release updates, or production
+Compose diagnosis.
 
-## 1. Remote SBC Architecture
+## Supported target
 
-The physical rig runs Raspberry Pi OS Lite (Trixie / 64-bit ARM) on a dedicated Pi 4:
-- **Tailscale IP**: `100.69.0.69` (`rig.harrybartos.com`)
-- **Field AP SSID**: `Reactor-Rig` (Static IP: `10.42.0.1`)
-- **User**: `pi`
-- **Application Directory**: `/home/pi/reactor-controller`
+- Raspberry Pi 4/5, ARM64
+- Raspberry Pi OS Lite 64-bit Trixie
+- Production configuration: `/etc/reactor-controller/reactor.env`
+- Immutable releases: `/opt/reactor-controller/releases/<version>`
+- Active release: `/opt/reactor-controller/current`
+- Persistent data: `/var/lib/reactor-controller`
+- Owner report: `/home/reactor/REACTOR_CONNECTION_INFO.md` (`0600`)
 
----
+Do not deploy the repository simulation Compose file to a physical Pi. The Pi
+payload has only commissioning/hardware profiles and no emulator fallback.
 
-## 2. Automated Initial SBC Provisioning (`setup_pi.sh`)
+## Fresh installation
 
-> **CRITICAL**: `setup_pi.sh` is strictly for **first-time, out-of-the-box provisioning** of fresh Raspberry Pi boards (or disaster recovery re-flashing). **NEVER** run this on an already-configured, live operational reactor rig! For active rigs, use Section 3 (Fast Rsync) or Docker restarts.
+Use the exact versioned command published at the top of `README.md`. It verifies
+`reactor-bootstrap.sh` against the immutable release `SHA256SUMS` before running
+it. A fresh OS must already have an initial recovery user and temporary Internet.
 
-For fresh Raspberry Pi 4 setups or disaster recovery, run the master orchestrator:
-```bash
-sudo ./setup_pi.sh
-```
-This automatically configures:
-1. Admin user credentials & security hardening.
-2. Docker Engine, Docker Compose plugin, and persistent `./data` storage.
-3. Tailscale mesh VPN with auto-reconnection on reboot (bypassing NAT router).
-4. `Reactor-Rig` field Wi-Fi hotspot with 15s boot failover on `wlan0`.
-5. Port 80 captive portal redirect to `:8000`.
-6. Dual-MCU UDEV persistent symlinks (`/dev/sensor_arduino` & `/dev/pump_arduino`).
-7. Creates root `.env`, validates the selected Compose profile, waits for all health checks, and outputs the dashboard and SSH directions.
+The installer is resumable under `/var/lib/reactor-installer`. Never delete its
+state to work around a failed step; inspect the stage receipt and fix the cause.
 
----
-
-## 3. Fast Rsync Deployment Pipeline
-
-To deploy code changes from the development machine to the remote Pi without rebuilding Docker images:
+## Runtime operations
 
 ```bash
-# 1. Sync supervisory, dashboards, and documents
-rsync -avz --exclude '.git' --exclude '__pycache__' --exclude '*.pyc' --exclude '*.db*' \
-  supervisory/app/ pi@100.69.0.69:/home/pi/reactor-controller/supervisory/app/
-rsync -avz supervisory/tests/ pi@100.69.0.69:/home/pi/reactor-controller/supervisory/tests/
-rsync -avz grafana/ pi@100.69.0.69:/home/pi/reactor-controller/grafana/
-rsync -avz documents/ README.md pi@100.69.0.69:/home/pi/reactor-controller/
-
-# 2. Recreate the active profile to load new code
-ssh pi@100.69.0.69 "cd /home/pi/reactor-controller && ./scripts/apply_profile.sh"
+sudo reactorctl status
+sudo reactorctl network status
+sudo reactorctl tailscale status
+sudo reactorctl logs supervisor
+sudo reactorctl logs grafana
+sudo reactorctl logs host
+sudo reactorctl credentials-report
 ```
 
----
+Network policy is deterministic:
 
-## 4. Host System Manager (`reactor-system-manager.service`)
+- Ethernet carrier: Ethernet uplink plus `Reactor-Rig` AP on `wlan0`.
+- No Ethernet and saved client: Wi-Fi client mode.
+- Client failure: recovery AP and no more automatic retries until
+  `sudo reactorctl network retry`.
 
-Runs on the host (outside Docker) on port `8001` with root privileges to manage:
-- Wi-Fi Hotspot daemon & captive portal (`10.42.0.1` redirect to `:8000`).
-- `.env`-configured buzzer relay control (proxied through `/api/system/*`).
-- Web password management (`POST /api/system/password`).
-- Host maintenance shell execution (`POST /api/system/exec`).
+AP-to-client handoff uses a detached, one-use 300-second browser confirmation.
+Timeout or validation failure restores the AP and does not reboot.
 
-The unit generated by `setup_pi.sh` loads `${APP_DIR}/.env` through systemd's `EnvironmentFile` directive. After changing `PI_BUZZER_GPIO`, restart `reactor-system-manager.service`; changing only `COMPOSE_PROFILES` does not require a different unit file.
+## Commissioning and hardware activation
 
-### Managing the Service:
-```bash
-# Check service status
-ssh pi@100.69.0.69 "sudo systemctl status reactor-system-manager.service"
+New systems start in `commissioning`. `/api/live` may be healthy while
+`/api/health` remains unready. Reactor control calls must stay locked.
 
-# View live systemd logs
-ssh pi@100.69.0.69 "sudo journalctl -u reactor-system-manager.service -f -n 50"
-
-# Restart system manager
-ssh pi@100.69.0.69 "sudo systemctl restart reactor-system-manager.service"
-```
-
----
-
-## 5. Docker Compose Environment
-
-Root `.env` is the only operator mode file. Never edit `docker-compose.yml` to change modes.
-
-- `COMPOSE_PROFILES=simulation`: supervisor, Grafana, sensor emulator, pump emulator, and fault UI on port 9990.
-- `COMPOSE_PROFILES=hardware`: supervisor and Grafana only. Exact Mega/Uno identities map to fixed container paths; the root host manager is the sole GPIO owner. Missing or swapped MCUs abort startup, and there is no emulator or mock-buzzer fallback.
-
-The same `.env` holds the verified MCU pin map, `PI_BUZZER_GPIO`, `ALLOW_MOCK_GPIO`, and `MCU_HEARTBEAT_TIMEOUT_MS`. PlatformIO consumes the pin and heartbeat values during firmware builds. Changing them does not reflash an MCU automatically.
-
-### Change Modes
-
-Edit only `COMPOSE_PROFILES` in `.env`, then validate and converge the stack:
+Hardware activation requires matching dual-MCU firmware receipts, exact UDEV
+identity, configured polarity, external safe-pull confirmations, buzzer path,
+and completed low-energy commissioning:
 
 ```bash
-./scripts/apply_profile.sh
+sudo reactorctl preflight
+sudo reactorctl activate-hardware
 ```
 
-Hardware output must list only `supervisory-hardware` and `grafana-hardware`. Before hardware startup, verify:
+Never set `REACTOR_MODE=hardware` merely to bypass a blocker. Fix the physical
+or configuration evidence and rerun the guarded activation command.
+
+## Updates and rollback
 
 ```bash
-test -c /dev/sensor_arduino
-test -c /dev/pump_arduino
-systemctl is-active --quiet reactor-system-manager.service
+sudo reactorctl update --version vX.Y.Z
+sudo reactorctl rollback
 ```
 
-### Health & Container Commands:
-```bash
-# Check all containers
-ssh pi@100.69.0.69 "cd /home/pi/reactor-controller && docker compose ps"
+Updates are explicit, checksum-verified, atomically switch the `current`
+symlink, and roll back when stack liveness fails. Firmware is never flashed by
+an application update.
 
-# Stream live supervisory logs
-ssh pi@100.69.0.69 "cd /home/pi/reactor-controller && docker compose logs --tail 50 -f supervisory-hardware"
+## Security boundary
 
-# Stream live Grafana logs
-ssh pi@100.69.0.69 "cd /home/pi/reactor-controller && docker compose logs --tail 50 -f grafana-hardware"
-```
+The browser shell/password administration and anonymous UI are intentionally
+preserved. No inbound firewall is installed. Use only a trusted LAN, hotspot,
+or tailnet and never add public WAN forwarding. Do not call this deployment
+hardened.

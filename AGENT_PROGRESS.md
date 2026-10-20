@@ -1,15 +1,15 @@
 # Agent Progress
 
 ## Current Resume Point
-- Last updated: 2026-10-19 09:29 PDT
-- Active goal: Make the reactor fail safe and allow simulation or physical production selection through one root `.env` file.
-- Current status: Code-level production blockers found by independent review are closed. The one-file profile/pin workflow, fail-safe MCU protocols, isolated runtime data, supervisory interlocks, and rollback path are implemented and validated in the isolated branch.
-- Files touched: Root profile/deployment docs and scripts, both MCU firmware projects, Compose/images, emulators, host manager/systemd, supervisory API/orchestrator/database/UI/tests, Grafana provisioning, and agent runbooks.
-- Commands run: Full isolated Python suite, both exact-pinned PlatformIO builds, both Compose profile renders, ShellCheck/bash syntax, Python compile, Grafana JSON/query-contract checks, diff check, and live emulator API/fault smokes.
-- Validation state: 103/103 tests pass. Mega build uses 27,298 B flash / 1,944 B RAM; Uno uses 8,568 B / 692 B. Simulation resolves to four services and hardware to two. Live emulator ACK/E-STOP/reset/comms-loss smokes pass. Docker runtime, rendered Grafana, Pi, and physical hardware remain unverified.
-- Next action: On the Pi, fill the exact root `.env`, safely build/flash matching firmware, validate simulation, then execute the documented de-energized and low-energy HIL commissioning matrix before actuator power is enabled.
-- Blockers: Physical activation still requires real Pi/serial/GPIO/SSR/pump/buzzer/hardwired E-STOP evidence. MQ-8 is advisory only; low-temperature dosing behavior still needs an authoritative process-safety decision. The intentionally preserved unauthenticated browser administration requires an isolated trusted LAN/hotspot or Tailnet.
-- Do not repeat: Do not run pytest from the canonical checkout without overriding `DATABASE_URL`; its fixtures delete rows.
+- Last updated: 2026-10-20 02:31
+- Active goal: Deliver a production-only one-command Raspberry Pi installer and immutable v2.1.0 release pipeline.
+- Current status: Locally release-candidate complete; ready to commit/push for fresh-Pi acceptance. Tests remain repo/CI-only and are excluded from every Pi payload.
+- Files touched: reactor-bootstrap.sh, compose.production.yml, reactor.env.example, deploy/production/**, host/system_manager.py, supervisory/**, firmware/**, pump_firmware/**, .github/**, release/**, README.md, INSTALL.md, FRIEND_SETUP_GUIDE.md, AGENT_PROGRESS.md
+- Commands run: 190/190 Python tests; 82/82 bootstrap assertions; Ruff, ShellCheck, bash -n, actionlint, diff-check; both PlatformIO builds; both Compose profile renders; deterministic release SHA verification; local supervisor/Grafana Docker smokes.
+- Validation state: Runtime archive has 19 allowlisted production files and no tests/emulators/.git; optional firmware archive has 16 build inputs. Commissioning live=200, readiness=503, actuation=423. Grafana healthy with SQLite plugin 4.0.6. Existing simulator containers remained running.
+- Next action: Commit and push codex/pi-bootstrap-release. Run on a fresh Pi 4 Trixie with real networking/Tailscale, then make first GHCR packages public, merge exact validated commit to main, tag v2.1.0, and let the immutable release workflow publish assets.
+- Blockers: Final public release and a truthful fresh-Pi-ready claim still require the real Pi/Tailscale/NetworkManager reboot smoke. Physical hardware activation separately requires MCU/GPIO/SSR/pump/buzzer/E-STOP commissioning.
+- Do not repeat: none recorded
 
 ## Chapter Log
 ### 2026-10-19 08:27 - Isolated production-unblock worktree
@@ -39,3 +39,43 @@
 - Validation: 103/103 isolated Python tests; Mega and Uno exact-pinned builds pass; four-service simulation and two-service hardware Compose models parse; live emulator command ACK, state gate, pump ACK, E-STOP/reset, and telemetry-loss pump-stop checks pass; ShellCheck, JSON parsing, Python compilation, and `git diff --check` pass.
 - Known debt: Docker daemon/rendered Grafana and all Pi/physical paths are unverified. Ruff reports 229 mostly legacy/style findings. `datetime.utcnow()` deprecation warnings remain. No firmware upload, deployment, or actuator test occurred.
 - Next: Commission Raspberry Pi OS Lite 64-bit Trixie from `codex/production-unblock` using the staged physical checklist; do not energize actuators before low-energy HIL acceptance.
+
+### 2026-10-19 12:03 - Start one-command Pi installer
+- Goal: Implement the production-only one-command Raspberry Pi installer and release pipeline from the validated production-unblock branch.
+- Progress: Confirmed the production-unblock baseline already has 103-test safety validation and identified installer, release packaging, networking, report, and firmware commissioning work as the remaining scope.
+- Decisions: none recorded
+- Files changed: AGENT_PROGRESS.md
+- Commands/results: git worktree add succeeded; clean branch status confirmed; deployment, firmware, and checkpoint skills read
+- Validation: No new implementation validation yet; baseline checkpoint records 103/103 tests and both firmware builds.
+- Next: Partition implementation across release packaging, bootstrap/runtime control, and network/report/firmware tooling, then integrate and validate.
+- Blockers: Fresh Pi, live Tailscale enrollment, real serial devices, GPIO, and physical actuator validation are unavailable in the local Mac environment.
+
+### 2026-10-19 12:06 - Commissioning lock and polarity configuration
+- Goal: Implement the production-only one-command Raspberry Pi installer and release pipeline.
+- Progress: Added REACTOR_MODE commissioning behavior, server-side actuation lock, UNCOMMISSIONED UI banner, no-serial/no-GPIO commissioning startup, firmware-fingerprinted Mega heater and Uno enable polarity, Pi buzzer polarity, and explicit external-safe-pull confirmation settings.
+- Decisions: none recorded
+- Files changed: supervisory/app/config.py, supervisory/app/main.py, supervisory/app/orchestrator.py, supervisory/app/static/index.html, supervisory/tests/test_commissioning_mode.py, scripts/load_firmware_env.py, scripts/tests/test_load_firmware_env.py, .env.example, docker-compose.yml, firmware/include/config.h, firmware/src/HeaterController.cpp, pump_firmware/src/main.cpp, host/system_manager.py, host/tests/test_system_manager.py, AGENT_PROGRESS.md
+- Commands/results: uv pytest focused suite: 45 passed; PlatformIO Mega and Uno production builds succeeded
+- Validation: 45/45 focused tests pass; Mega build 27298 B flash/1944 B RAM; Uno build 8568 B flash/692 B RAM.
+- Next: Integrate bootstrap, production runtime tools, release packaging, documentation, then run the complete validation matrix.
+- Blockers: Fresh Raspberry Pi, Tailscale enrollment, real MCU serial, GPIO, and physical actuator checks remain unavailable.
+
+### 2026-10-20 02:28 - One-command Pi installer locally validated
+- Goal: Deliver a production-only, resumable one-command Raspberry Pi installer and immutable v2.1.0 release pipeline.
+- Progress: Added versioned bootstrap, production-only release assets/images, commissioning and hardware runtime, typed reactorctl operations, dynamic network/handoff, Tailscale/SSH/account setup, private connection report, guarded dual-MCU firmware flow, update/rollback, systemd crash recovery, polarity/release compatibility gates, README and end-user setup documentation. Enabled GitHub immutable releases.
+- Decisions: none recorded
+- Files changed: reactor-bootstrap.sh, setup_pi.sh, compose.production.yml, reactor.env.example, deploy/production/**, .github/workflows/release.yml, release/**, supervisory/**, firmware/**, pump_firmware/**, host/system_manager.py, README.md, INSTALL.md, FRIEND_SETUP_GUIDE.md, AGENT_PROGRESS.md
+- Commands/results: Full isolated pytest suite passed; bootstrap TAP 82/82; Ruff/ShellCheck/bash -n/actionlint/diff-check passed; both PlatformIO builds passed; production release assets and SHA256SUMS verified; commissioning supervisor and Grafana Docker smokes passed.
+- Validation: Commissioning /api/live=200, /api/health=503 UNCOMMISSIONED, actuation=423; Grafana healthy with SQLite plugin 4.0.6; production archives exclude tests/emulators/.git; Mega 27298 B flash/1944 B RAM, Uno 8568 B/692 B.
+- Next: Audit diff/secrets, commit and push codex/pi-bootstrap-release. Then run the documented fresh Pi 4 Trixie acceptance matrix before merging main/tagging v2.1.0; first GHCR packages must be made public and anonymous pulls proven.
+- Blockers: No fresh Pi, real Tailscale enrollment, NetworkManager handoff, MCU serial/GPIO, SSR/pump/buzzer, or physical E-STOP evidence is available locally. Final immutable release must wait for that Pi acceptance.
+
+### 2026-10-20 02:31 - Final local release-candidate gate
+- Goal: Deliver a production-only one-command Raspberry Pi installer and immutable v2.1.0 release pipeline.
+- Progress: Closed final independent-review issues: systemd-only preflighted restart ownership, Pi5 end0 discovery, connectivity-loss AP recovery, confirmed handoff stage receipts, complete Tailscale IPv4/MagicDNS gate, browser Wi-Fi typed handoff, Grafana group access, firmware commissioning restart, runtime readiness fallback, safe credential report refresh, and same-release/source firmware compatibility.
+- Decisions: none recorded
+- Files changed: reactor-bootstrap.sh, compose.production.yml, reactor.env.example, deploy/production/**, host/system_manager.py, supervisory/**, firmware/**, pump_firmware/**, .github/**, release/**, README.md, INSTALL.md, FRIEND_SETUP_GUIDE.md, AGENT_PROGRESS.md
+- Commands/results: 190/190 Python tests; 82/82 bootstrap assertions; Ruff, ShellCheck, bash -n, actionlint, diff-check; both PlatformIO builds; both Compose profile renders; deterministic release SHA verification; local supervisor/Grafana Docker smokes.
+- Validation: Runtime archive has 19 allowlisted production files and no tests/emulators/.git; optional firmware archive has 16 build inputs. Commissioning live=200, readiness=503, actuation=423. Grafana healthy with SQLite plugin 4.0.6. Existing simulator containers remained running.
+- Next: Commit and push codex/pi-bootstrap-release. Run on a fresh Pi 4 Trixie with real networking/Tailscale, then make first GHCR packages public, merge exact validated commit to main, tag v2.1.0, and let the immutable release workflow publish assets.
+- Blockers: Final public release and a truthful fresh-Pi-ready claim still require the real Pi/Tailscale/NetworkManager reboot smoke. Physical hardware activation separately requires MCU/GPIO/SSR/pump/buzzer/E-STOP commissioning.

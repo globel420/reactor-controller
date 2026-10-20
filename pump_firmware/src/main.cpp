@@ -12,6 +12,9 @@
 #ifndef UNO_PIN_DIRECTION
 #define UNO_PIN_DIRECTION 10
 #endif
+#ifndef UNO_ENABLE_ACTIVE_LOW
+#define UNO_ENABLE_ACTIVE_LOW 1
+#endif
 #ifndef MCU_HEARTBEAT_TIMEOUT_MS
 #define MCU_HEARTBEAT_TIMEOUT_MS 3000
 #endif
@@ -22,6 +25,9 @@
 #if MCU_HEARTBEAT_TIMEOUT_MS != 3000
 #error "MCU_HEARTBEAT_TIMEOUT_MS must be exactly 3000"
 #endif
+#if UNO_ENABLE_ACTIVE_LOW != 0 && UNO_ENABLE_ACTIVE_LOW != 1
+#error "UNO_ENABLE_ACTIVE_LOW must be 0 or 1"
+#endif
 #if UNO_PIN_ENABLE == UNO_PIN_STEP || UNO_PIN_ENABLE == UNO_PIN_DIRECTION || \
     UNO_PIN_STEP == UNO_PIN_DIRECTION
 #error "Uno pump pins must be unique"
@@ -29,7 +35,15 @@
 
 const long MAX_STEP_RATE = 4000;
 
-// TB6600 enable is active-low: HIGH/open is the fail-safe disabled state.
+#if UNO_ENABLE_ACTIVE_LOW
+const uint8_t PUMP_ENABLE_LEVEL = LOW;
+const uint8_t PUMP_DISABLE_LEVEL = HIGH;
+#else
+const uint8_t PUMP_ENABLE_LEVEL = HIGH;
+const uint8_t PUMP_DISABLE_LEVEL = LOW;
+#endif
+
+// The selected TB6600 enable polarity is part of the firmware fingerprint.
 AccelStepper stepper(AccelStepper::DRIVER, UNO_PIN_STEP, UNO_PIN_DIRECTION);
 
 static char inputBuffer[64];
@@ -58,7 +72,7 @@ bool heartbeatIsFresh(unsigned long now) {
 void disablePump() {
   isRunning = false;
   stepper.setSpeed(0.0f);
-  digitalWrite(UNO_PIN_ENABLE, HIGH);
+  digitalWrite(UNO_PIN_ENABLE, PUMP_DISABLE_LEVEL);
   digitalWrite(UNO_PIN_STEP, LOW);
 }
 
@@ -113,7 +127,7 @@ void parseCommand(const char *cmd) {
     }
     isRunning = true;
     stepper.setSpeed(directionSign * speedMagnitude);
-    digitalWrite(UNO_PIN_ENABLE, LOW);
+    digitalWrite(UNO_PIN_ENABLE, PUMP_ENABLE_LEVEL);
     Serial.println("OK:START");
     return;
   }
@@ -153,9 +167,9 @@ void parseCommand(const char *cmd) {
 }
 
 void setup() {
-  // Set output latches before changing pin direction so the active-low driver
-  // cannot be enabled by software during setup.
-  digitalWrite(UNO_PIN_ENABLE, HIGH);
+  // Set output latches before changing pin direction so the driver cannot be
+  // enabled by software during setup, regardless of configured polarity.
+  digitalWrite(UNO_PIN_ENABLE, PUMP_DISABLE_LEVEL);
   pinMode(UNO_PIN_ENABLE, OUTPUT);
   digitalWrite(UNO_PIN_STEP, LOW);
   pinMode(UNO_PIN_STEP, OUTPUT);
@@ -211,11 +225,11 @@ void loop() {
   }
 
   if (isRunning) {
-    digitalWrite(UNO_PIN_ENABLE, LOW);
+    digitalWrite(UNO_PIN_ENABLE, PUMP_ENABLE_LEVEL);
     stepper.runSpeed();
   } else {
     // Defense in depth: every idle pass reasserts the electrical safe state.
-    digitalWrite(UNO_PIN_ENABLE, HIGH);
+    digitalWrite(UNO_PIN_ENABLE, PUMP_DISABLE_LEVEL);
     digitalWrite(UNO_PIN_STEP, LOW);
   }
 }

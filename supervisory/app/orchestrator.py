@@ -861,6 +861,20 @@ class Orchestrator:
         return {"status": "reset", "state": 0}
 
     def health_status(self) -> dict:
+        if settings.REACTOR_MODE == "commissioning":
+            return {
+                "status": "uncommissioned",
+                "ready": False,
+                "mode": "commissioning",
+                "reported_state": None,
+                "requirements": {
+                    "actuation_locked": True,
+                    "mega_connected": False,
+                    "pump_connected": False,
+                    "hardware_activation_required": True,
+                },
+                "safety_trip": self.safety_trip,
+            }
         telemetry_fresh = self.telemetry_is_fresh()
         monotonic_now = time.monotonic()
         telemetry_logging_healthy = (
@@ -934,7 +948,7 @@ class Orchestrator:
         return {
             "status": "ready" if ready else "not_ready",
             "ready": ready,
-            "mode": settings.APP_ENV,
+            "mode": settings.REACTOR_MODE,
             "reported_state": self.reported_state,
             "requirements": requirements,
             "safety_trip": self.safety_trip,
@@ -993,6 +1007,15 @@ class Orchestrator:
         except Exception as e:
             logger.warning(f"Could not load active run from DB: {e}")
 
+        if settings.REACTOR_MODE == "commissioning":
+            # Commissioning serves the real UI and persistent database without
+            # opening serial devices, touching GPIO, or starting any automatic
+            # control loop.  Rollups remain available for existing data.
+            self.r1m_task = asyncio.create_task(self.rollup_1m_loop())
+            self.r10m_task = asyncio.create_task(self.rollup_10m_loop())
+            logger.warning("UNCOMMISSIONED: all reactor actuation is locked")
+            return
+
         await self._set_buzzer(self.safety_latched)
         
         # Connect Serial to Arduino
@@ -1013,8 +1036,9 @@ class Orchestrator:
         self.pump_mode = "manual"
         motor_controller.set_auto_mode(False)
         self.ramps.clear()
-        await motor_controller.set_motor(False, motor_controller.expected_dir, 0)
-        await serial_link.send_command({"cmd": "SET_STATE", "state": 0})
+        if settings.REACTOR_MODE != "commissioning":
+            await motor_controller.set_motor(False, motor_controller.expected_dir, 0)
+            await serial_link.send_command({"cmd": "SET_STATE", "state": 0})
 
         pending = []
         for task in [self.poll_task, self.auto_task, self.r1m_task, self.r10m_task, self.heartbeat_task]:
@@ -1024,10 +1048,11 @@ class Orchestrator:
         if pending:
             await asyncio.gather(*pending, return_exceptions=True)
 
-        await motor_controller.disconnect()
-        await serial_link.disconnect()
-        if not self.safety_latched:
-            await self._set_buzzer(False)
+        if settings.REACTOR_MODE != "commissioning":
+            await motor_controller.disconnect()
+            await serial_link.disconnect()
+            if not self.safety_latched:
+                await self._set_buzzer(False)
         logger.info("Orchestrator stopped cleanly.")
 
     def compute_live_analytics(self, current_data: dict) -> dict:
@@ -1522,18 +1547,28 @@ class Orchestrator:
                 return "OK"
             details = []
             if is_rtd:
-                if err_code & 0x04: details.append("Voltage Out of Range (0x04)")
-                if err_code & 0x08: details.append("RTDIn- / Force- Open (0x08)")
-                if err_code & 0x10: details.append("RefIn- Low / Open (0x10)")
-                if err_code & 0x20: details.append("RefIn- High (0x20)")
-                if err_code & 0x40: details.append("Low Temp Threshold (0x40)")
-                if err_code & 0x80: details.append("High Temp Threshold (0x80)")
+                if err_code & 0x04:
+                    details.append("Voltage Out of Range (0x04)")
+                if err_code & 0x08:
+                    details.append("RTDIn- / Force- Open (0x08)")
+                if err_code & 0x10:
+                    details.append("RefIn- Low / Open (0x10)")
+                if err_code & 0x20:
+                    details.append("RefIn- High (0x20)")
+                if err_code & 0x40:
+                    details.append("Low Temp Threshold (0x40)")
+                if err_code & 0x80:
+                    details.append("High Temp Threshold (0x80)")
                 return "MAX31865 " + (", ".join(details) if details else f"Fault (0x{err_code:02X})")
             else:
-                if err_code & 0x01: details.append("Open Circuit (0x01)")
-                if err_code & 0x02: details.append("Short to GND (0x02)")
-                if err_code & 0x04: details.append("Short to VCC (0x04)")
-                if err_code & 0x08: details.append("Comm Fault / NaN (0x08)")
+                if err_code & 0x01:
+                    details.append("Open Circuit (0x01)")
+                if err_code & 0x02:
+                    details.append("Short to GND (0x02)")
+                if err_code & 0x04:
+                    details.append("Short to VCC (0x04)")
+                if err_code & 0x08:
+                    details.append("Comm Fault / NaN (0x08)")
                 return "MAX31855 " + (", ".join(details) if details else f"Fault (0x{err_code:02X})")
 
         try:
@@ -1828,7 +1863,8 @@ class Orchestrator:
             }
         else:
             # Immediate
-            if zone in self.ramps: del self.ramps[zone]
+            if zone in self.ramps:
+                del self.ramps[zone]
             await self.send_command_setpoint(zone, setpoint)
 
     async def restore_last_configuration(self):

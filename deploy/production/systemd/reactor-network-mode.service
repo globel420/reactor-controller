@@ -1,0 +1,14 @@
+[Unit]
+Description=Reactor Controller boot network policy
+Requires=NetworkManager.service
+After=NetworkManager.service
+Before=network-online.target reactor-preflight.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/reactorctl network apply
+RemainAfterExit=yes
+TimeoutStartSec=90
+
+[Install]
+WantedBy=multi-user.target

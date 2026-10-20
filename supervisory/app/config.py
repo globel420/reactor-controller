@@ -31,6 +31,15 @@ def _env_finite_float(
 
 
 _APP_ENV = os.getenv("APP_ENV", "production").lower()
+_REACTOR_MODE = os.getenv(
+    "REACTOR_MODE", "simulation" if _APP_ENV == "development" else "hardware"
+).lower()
+if _REACTOR_MODE not in {"simulation", "commissioning", "hardware"}:
+    raise RuntimeError(
+        "REACTOR_MODE must be simulation, commissioning, or hardware"
+    )
+if _APP_ENV == "production" and _REACTOR_MODE == "simulation":
+    raise RuntimeError("Production cannot run with REACTOR_MODE=simulation")
 if _APP_ENV == "production":
     missing_firmware_values = sorted(key for key in FIRMWARE_ENV_KEYS if key not in os.environ)
     if missing_firmware_values:
@@ -46,6 +55,7 @@ _EXPECTED_UNO_CONFIG_HASH = config_fingerprint(_FIRMWARE_CONFIG, "uno")
 class Settings:
     # Check environment (defaulting to production if not specified)
     APP_ENV: str = _APP_ENV
+    REACTOR_MODE: str = _REACTOR_MODE
 
     if APP_ENV == "development":
         _default_sensor_port = "socket://sensor_emulator:9999"

@@ -2,8 +2,9 @@
 """
 Reactor Pi System & Network Manager Daemon
 Runs as a systemd service on the host Raspberry Pi.
-- Manages Wi-Fi Hotspot ("Reactor-Rig") & Client Wi-Fi switching
-- Boot-time failover: connects to known Wi-Fi; if none in 15s, starts Hotspot
+- Preserves the browser host-administration and Wi-Fi API.
+- Production Wi-Fi changes delegate to reactorctl's confirmed handoff; the
+  legacy direct NetworkManager fallback remains only for old checkout installs.
 - Port 80: HTTP Redirector to Control Panel (:8000)
 - Port 8001: REST API for Supervisory container (system metrics, Wi-Fi scan/connect, reboot)
 """
@@ -11,17 +12,42 @@ Runs as a systemd service on the host Raspberry Pi.
 import http.server
 import json
 import os
+import pwd
 import shutil
 import subprocess
-import sys
+import tempfile
 import threading
 import time
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import urlparse
 
 API_PORT = 8001
 REDIRECT_PORT = 80
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+REACTOR_DATA_DIR = os.getenv(
+    "REACTOR_DATA_DIR", os.path.join(BASE_DIR, "data")
+)
+REACTOR_ADMIN_USER = os.getenv("REACTOR_ADMIN_USER", "reactor")
+EXTERNAL_NETWORK_MANAGER = (
+    os.getenv("REACTOR_NETWORK_MODE_OWNER", "legacy").strip().lower()
+    == "reactorctl"
+)
+HOTSPOT_CONNECTION = os.getenv("HOTSPOT_CONNECTION", "Reactor-Rig")
+HOTSPOT_SSID = os.getenv("HOTSPOT_SSID", "Reactor-Rig")
+REACTORCTL = "/usr/local/sbin/reactorctl"
+REACTOR_INSTALLER_RUN_DIR = os.getenv(
+    "REACTOR_INSTALLER_RUN_DIR", "/run/reactor-installer"
+)
+ADMIN_PASSWORD_SECRET_FILE = os.getenv(
+    "REACTOR_ADMIN_PASSWORD_SECRET_FILE",
+    "/etc/reactor-controller/secrets/reactor-admin-password",
+)
 BUZZER_PIN = int(os.getenv("PI_BUZZER_GPIO", "26"))
+BUZZER_ACTIVE_HIGH = os.getenv("PI_BUZZER_ACTIVE_HIGH", "true").strip().lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
 _safety_latch_path = os.getenv(
     "HOST_SAFETY_LATCH_FILE", "data/hardware/safety_latched"
 )
@@ -31,6 +57,47 @@ SAFETY_LATCH_FILE = (
     else os.path.join(BASE_DIR, _safety_latch_path)
 )
 BUZZER_LOCK = threading.Lock()
+
+
+def persist_admin_password_for_report(password: str) -> None:
+    """Atomically keep the owner-only connection sheet aligned with chpasswd."""
+    destination = os.path.abspath(ADMIN_PASSWORD_SECRET_FILE)
+    directory = os.path.dirname(destination)
+    if os.path.islink(destination):
+        raise RuntimeError("Refusing administrator password secret symlink")
+    os.makedirs(directory, mode=0o750, exist_ok=True)
+    reactor_gid = pwd.getpwnam(REACTOR_ADMIN_USER).pw_gid
+    descriptor, temporary = tempfile.mkstemp(prefix=".reactor-password-", dir=directory)
+    try:
+        payload = (password + "\n").encode("utf-8")
+        os.write(descriptor, payload)
+        os.fsync(descriptor)
+        os.fchmod(descriptor, 0o640)
+        os.fchown(descriptor, 0, reactor_gid)
+        os.close(descriptor)
+        descriptor = -1
+        os.replace(temporary, destination)
+        directory_fd = os.open(directory, os.O_RDONLY)
+        try:
+            os.fsync(directory_fd)
+        finally:
+            os.close(directory_fd)
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+        try:
+            os.unlink(temporary)
+        except FileNotFoundError:
+            pass
+
+    refreshed = subprocess.run(
+        [REACTORCTL, "credentials-report", "--refresh-credentials"],
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    if refreshed.returncode != 0:
+        raise RuntimeError("Password changed, but the connection report refresh failed")
 
 
 def set_buzzer(active: bool):
@@ -43,7 +110,8 @@ def set_buzzer(active: bool):
                 "gpio": BUZZER_PIN,
                 "message": "Safety latch requires the buzzer to remain active",
             }
-        level = "dh" if active else "dl"
+        level_high = active == BUZZER_ACTIVE_HIGH
+        level = "dh" if level_high else "dl"
         result = subprocess.run(
             ["pinctrl", "set", str(BUZZER_PIN), "op", level],
             capture_output=True,
@@ -75,9 +143,9 @@ def get_wifi_status():
 
     mode = "disconnected"
     ssid = None
-    if wifi_conn == "Reactor-AP":
+    if wifi_conn == HOTSPOT_CONNECTION:
         mode = "hotspot"
-        ssid = "Reactor-Rig"
+        ssid = HOTSPOT_SSID
     elif state == "connected":
         mode = "client"
         ssid = wifi_conn
@@ -143,6 +211,83 @@ def scan_wifi():
 
 
 def connect_wifi(ssid: str, password: str = ""):
+    if EXTERNAL_NETWORK_MANAGER:
+        run_dir = REACTOR_INSTALLER_RUN_DIR
+        os.makedirs(run_dir, mode=0o700, exist_ok=True)
+        descriptor, credential_path = tempfile.mkstemp(
+            prefix="browser-wifi-", suffix=".json", dir=run_dir
+        )
+        try:
+            os.fchmod(descriptor, 0o600)
+            with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+                descriptor = -1
+                json.dump({"ssid": ssid, "password": password}, handle)
+                handle.write("\n")
+            configured = subprocess.run(
+                [
+                    REACTORCTL,
+                    "network",
+                    "configure-client",
+                    "--credentials-file",
+                    credential_path,
+                ],
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            if configured.returncode != 0:
+                detail = configured.stderr.strip() or configured.stdout.strip()
+                return {"status": "error", "message": detail or "Wi-Fi configuration failed"}
+
+            handoff_command = [REACTORCTL, "network", "handoff"]
+            if os.getenv("TAILSCALE_REQUIRED", "true").strip().lower() in {
+                "1",
+                "true",
+                "yes",
+                "on",
+            }:
+                handoff_command.append("--reboot-on-confirm")
+            handoff = subprocess.run(
+                handoff_command,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            if handoff.returncode != 0:
+                detail = handoff.stderr.strip() or handoff.stdout.strip()
+                return {"status": "error", "message": detail or "Wi-Fi handoff failed"}
+            confirmation_urls = [
+                line.strip()
+                for line in handoff.stdout.splitlines()
+                if line.strip().startswith("http://")
+            ]
+            preferred_url = next(
+                (
+                    url
+                    for url in confirmation_urls
+                    if (urlparse(url).hostname or "").endswith(".local")
+                ),
+                confirmation_urls[0] if confirmation_urls else "",
+            )
+            return {
+                "status": "pending",
+                "message": (
+                    "Saved Wi-Fi. Reconnect to that LAN and open the one-use "
+                    "confirmation link within 300 seconds."
+                ),
+                "confirmation_url": preferred_url,
+                "confirmation_urls": confirmation_urls,
+            }
+        except subprocess.TimeoutExpired:
+            return {"status": "error", "message": "Wi-Fi handoff command timed out"}
+        finally:
+            if descriptor >= 0:
+                os.close(descriptor)
+            try:
+                os.unlink(credential_path)
+            except FileNotFoundError:
+                pass
+
     cmd = ["nmcli", "device", "wifi", "connect", ssid]
     if password:
         cmd.extend(["password", password])
@@ -165,6 +310,22 @@ def connect_wifi(ssid: str, password: str = ""):
 
 
 def activate_hotspot():
+    if EXTERNAL_NETWORK_MANAGER:
+        result = subprocess.run(
+            [REACTORCTL, "network", "hotspot"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        return {
+            "status": "ok" if result.returncode == 0 else "error",
+            "message": (
+                "Hotspot Reactor-Rig activated"
+                if result.returncode == 0
+                else (result.stderr.strip() or result.stdout.strip())
+            ),
+            "wifi": get_wifi_status() if result.returncode == 0 else None,
+        }
     res = subprocess.run(["nmcli", "connection", "up", "Reactor-AP"], capture_output=True, text=True)
     if res.returncode == 0:
         return {"status": "ok", "message": "Hotspot Reactor-Rig activated", "wifi": get_wifi_status()}
@@ -187,7 +348,10 @@ def get_system_metrics():
     try:
         with open("/proc/meminfo") as f:
             lines = f.readlines()
-            mem = {l.split(":")[0]: int(l.split(":")[1].strip().split()[0]) for l in lines}
+            mem = {
+                line.split(":")[0]: int(line.split(":")[1].strip().split()[0])
+                for line in lines
+            }
         ram_total_mb = mem.get("MemTotal", 0) // 1024
         ram_avail_mb = mem.get("MemAvailable", 0) // 1024
         ram_used_mb = ram_total_mb - ram_avail_mb
@@ -230,10 +394,13 @@ def get_system_metrics():
 
     # DB Size
     db_size_mb = 0.0
-    data_profile = (
-        "hardware" if os.getenv("COMPOSE_PROFILES") == "hardware" else "simulation"
-    )
-    db_path = os.path.join(BASE_DIR, "data", data_profile, "reactor_logs.db")
+    if os.path.isabs(REACTOR_DATA_DIR) and REACTOR_DATA_DIR != os.path.join(BASE_DIR, "data"):
+        db_path = os.path.join(REACTOR_DATA_DIR, "supervisory", "reactor_logs.db")
+    else:
+        data_profile = (
+            "hardware" if os.getenv("COMPOSE_PROFILES") == "hardware" else "simulation"
+        )
+        db_path = os.path.join(REACTOR_DATA_DIR, data_profile, "reactor_logs.db")
     try:
         if os.path.exists(db_path):
             total_bytes = os.path.getsize(db_path)
@@ -324,8 +491,12 @@ class ApiHandler(http.server.BaseHTTPRequestHandler):
         elif path == "/api/system/restart-services":
             def _restart():
                 time.sleep(1)
-                compose_file = os.path.join(BASE_DIR, "docker-compose.yml")
-                subprocess.run(["docker", "compose", "-f", compose_file, "restart"])
+                # Preserve the browser endpoint, but route it through the
+                # systemd owner so every restart repeats fail-closed preflight.
+                subprocess.run(
+                    ["systemctl", "restart", "reactor-stack.service"],
+                    timeout=180,
+                )
             threading.Thread(target=_restart, daemon=True).start()
             self._send_json({"status": "ok", "message": "Service restart initiated"})
 
@@ -349,13 +520,15 @@ class ApiHandler(http.server.BaseHTTPRequestHandler):
                 # Buzzer test helper
                 if cmd == "test-buzzer":
                     with BUZZER_LOCK:
-                        subprocess.run(["pinctrl", "set", str(BUZZER_PIN), "op", "dh"], capture_output=True)
+                        on_level = "dh" if BUZZER_ACTIVE_HIGH else "dl"
+                        off_level = "dl" if BUZZER_ACTIVE_HIGH else "dh"
+                        subprocess.run(["pinctrl", "set", str(BUZZER_PIN), "op", on_level], capture_output=True)
                         time.sleep(1.5)
                         safety_demanded = os.path.exists(SAFETY_LATCH_FILE)
                         if not safety_demanded:
-                            subprocess.run(["pinctrl", "set", str(BUZZER_PIN), "op", "dl"], capture_output=True)
+                            subprocess.run(["pinctrl", "set", str(BUZZER_PIN), "op", off_level], capture_output=True)
                     self._send_json({
-                        "command": f"pinctrl set {BUZZER_PIN} op dh (1.5s pulse)",
+                        "command": f"pinctrl set {BUZZER_PIN} op {on_level} (1.5s pulse)",
                         "stdout": (
                             f"Buzzer GPIO {BUZZER_PIN} test completed; "
                             + ("safety latch remains active." if safety_demanded else "output restored off.")
@@ -404,13 +577,18 @@ class ApiHandler(http.server.BaseHTTPRequestHandler):
                 return
             try:
                 chpasswd_bin = "/usr/sbin/chpasswd" if os.path.exists("/usr/sbin/chpasswd") else "chpasswd"
-                # Determine target user
-                target_user = os.environ.get("SUDO_USER")
-                if not target_user:
-                    # check if pi exists
-                    import pwd
-                    users = [u.pw_name for u in pwd.getpwall() if u.pw_uid >= 1000]
-                    target_user = users[0] if users else "pi"
+                target_user = REACTOR_ADMIN_USER
+                try:
+                    pwd.getpwnam(target_user)
+                except KeyError:
+                    self._send_json(
+                        {
+                            "status": "error",
+                            "message": f"Configured admin user '{target_user}' does not exist",
+                        },
+                        code=409,
+                    )
+                    return
                 res = subprocess.run(
                     [chpasswd_bin],
                     input=f"{target_user}:{new_pw}".encode("utf-8"),
@@ -418,7 +596,19 @@ class ApiHandler(http.server.BaseHTTPRequestHandler):
                     timeout=10
                 )
                 if res.returncode == 0:
-                    self._send_json({"status": "ok", "message": f"Password for user '{target_user}' updated successfully!"})
+                    report_warning = ""
+                    if EXTERNAL_NETWORK_MANAGER:
+                        try:
+                            persist_admin_password_for_report(new_pw)
+                        except Exception as exc:
+                            report_warning = f" {exc}"
+                    self._send_json({
+                        "status": "ok",
+                        "message": (
+                            f"Password for user '{target_user}' updated successfully!"
+                            + report_warning
+                        ),
+                    })
                 else:
                     err = res.stderr.decode("utf-8").strip() or "Failed to change password"
                     self._send_json({"status": "error", "message": err}, code=500)
@@ -463,8 +653,10 @@ def main():
     if os.path.exists(SAFETY_LATCH_FILE):
         set_buzzer(True)
 
-    # Start boot failover thread
-    threading.Thread(target=boot_failover, daemon=True).start()
+    # The production installer owns networking through reactorctl/systemd.
+    # Retain the legacy behavior only for existing non-production deployments.
+    if not EXTERNAL_NETWORK_MANAGER:
+        threading.Thread(target=boot_failover, daemon=True).start()
 
     # Start Port 80 Redirect Server in background thread (if port 80 available)
     try:

@@ -35,7 +35,9 @@ def test_defaults_are_safe_without_env_file(tmp_path: Path) -> None:
     config = firmware_env.resolve_config(project_dir, {})
 
     assert config["MEGA_PIN_HEATER_PREHEATER"] == "6"
+    assert config["MEGA_HEATER_ACTIVE_HIGH"] == "1"
     assert config["UNO_PIN_ENABLE"] == "8"
+    assert config["UNO_ENABLE_ACTIVE_LOW"] == "1"
     assert config["MCU_HEARTBEAT_TIMEOUT_MS"] == "3000"
 
 
@@ -89,6 +91,8 @@ def test_mega_hardware_ss_pin_53_is_allowed_for_chip_select(tmp_path: Path) -> N
         ("MEGA_PIN_SPI_SCK=52\n", "reserved Mega hardware-SPI pin"),
         ("MEGA_PIN_HEATER_GAS=53\n", "reserved Mega hardware-SPI pin"),
         ("UNO_PIN_ENABLE=8\nUNO_PIN_STEP=8\n", "both select physical pin"),
+        ("MEGA_HEATER_ACTIVE_HIGH=2\n", "must be 0 or 1"),
+        ("UNO_ENABLE_ACTIVE_LOW=false\n", "must be 0 or 1"),
     ],
 )
 def test_unsafe_configuration_is_rejected(tmp_path: Path, line: str, message: str) -> None:
@@ -139,8 +143,14 @@ def test_platformio_receives_only_target_allowlist(
 
     assert expected in fake_env.defines
     assert ("MCU_HEARTBEAT_TIMEOUT_MS", "3000") in fake_env.defines
-    assert excluded not in {key for key, _ in fake_env.defines}
     canonical_target = "mega" if target.startswith("mega") else "uno"
+    polarity_key = (
+        "MEGA_HEATER_ACTIVE_HIGH"
+        if canonical_target == "mega"
+        else "UNO_ENABLE_ACTIVE_LOW"
+    )
+    assert (polarity_key, "1") in fake_env.defines
+    assert excluded not in {key for key, _ in fake_env.defines}
     expected_hash = firmware_env.config_fingerprint(
         firmware_env.resolve_config(project_dir, {}), canonical_target
     )
@@ -188,7 +198,8 @@ def test_hardware_mode_accepts_the_complete_tracked_map(tmp_path: Path) -> None:
     (tmp_path / ".env").write_text(
         (REPO_ROOT / ".env.example")
         .read_text(encoding="utf-8")
-        .replace("COMPOSE_PROFILES=simulation", "COMPOSE_PROFILES=hardware"),
+        .replace("COMPOSE_PROFILES=simulation", "COMPOSE_PROFILES=hardware")
+        .replace("REACTOR_MODE=simulation", "REACTOR_MODE=hardware"),
         encoding="utf-8",
     )
 
@@ -197,9 +208,38 @@ def test_hardware_mode_accepts_the_complete_tracked_map(tmp_path: Path) -> None:
     assert config == firmware_env.DEFAULTS
 
 
+def test_commissioning_mode_accepts_complete_production_map(tmp_path: Path) -> None:
+    project_dir = tmp_path / "firmware"
+    project_dir.mkdir()
+    (tmp_path / ".env").write_text(
+        (REPO_ROOT / ".env.example")
+        .read_text(encoding="utf-8")
+        .replace("COMPOSE_PROFILES=simulation", "COMPOSE_PROFILES=commissioning")
+        .replace("REACTOR_MODE=simulation", "REACTOR_MODE=commissioning"),
+        encoding="utf-8",
+    )
+
+    config, mode, _ = firmware_env.resolve_config_details(project_dir, {})
+
+    assert mode == "commissioning"
+    assert config == firmware_env.DEFAULTS
+
+
+def test_conflicting_legacy_and_runtime_modes_are_rejected(tmp_path: Path) -> None:
+    project_dir = tmp_path / "firmware"
+    project_dir.mkdir()
+    (tmp_path / ".env").write_text(
+        "COMPOSE_PROFILES=hardware\nREACTOR_MODE=commissioning\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(firmware_env.FirmwareEnvError, match="same mode"):
+        firmware_env.resolve_config(project_dir, {})
+
+
 def test_default_fingerprints_are_stable() -> None:
-    assert firmware_env.config_fingerprint(firmware_env.DEFAULTS, "mega") == 0xB0912D12
-    assert firmware_env.config_fingerprint(firmware_env.DEFAULTS, "uno") == 0x0722CFAD
+    assert firmware_env.config_fingerprint(firmware_env.DEFAULTS, "mega") == 0x0092DB4D
+    assert firmware_env.config_fingerprint(firmware_env.DEFAULTS, "uno") == 0x09AA14EE
 
 
 def test_target_fingerprint_ignores_other_mcu_pin_changes() -> None:
@@ -222,7 +262,7 @@ def test_equivalent_decimal_pin_spelling_has_same_fingerprint(tmp_path: Path) ->
     config = firmware_env.resolve_config(project_dir, {})
 
     assert config["UNO_PIN_ENABLE"] == "8"
-    assert firmware_env.config_fingerprint(config, "uno") == 0x0722CFAD
+    assert firmware_env.config_fingerprint(config, "uno") == 0x09AA14EE
 
 
 def test_json_cli_reports_machine_readable_target_hashes(capsys) -> None:
@@ -234,10 +274,10 @@ def test_json_cli_reports_machine_readable_target_hashes(capsys) -> None:
     payload = json.loads(capsys.readouterr().out)
     assert exit_code == 0
     assert payload["algorithm"] == "fnv1a-32"
-    assert payload["schema"] == "reactor-firmware-config-v1"
-    assert payload["targets"]["mega"]["config_hash"] == 0xB0912D12
-    assert payload["targets"]["mega"]["config_hash_hex"] == "0xB0912D12"
-    assert payload["targets"]["uno"]["config_hash"] == 0x0722CFAD
+    assert payload["schema"] == "reactor-firmware-config-v2"
+    assert payload["targets"]["mega"]["config_hash"] == 0x0092DB4D
+    assert payload["targets"]["mega"]["config_hash_hex"] == "0x0092DB4D"
+    assert payload["targets"]["uno"]["config_hash"] == 0x09AA14EE
 
 
 def test_check_cli_can_select_one_target(capsys) -> None:
@@ -254,7 +294,7 @@ def test_check_cli_can_select_one_target(capsys) -> None:
 
     output = capsys.readouterr().out
     assert exit_code == 0
-    assert "uno config_hash=0x0722CFAD" in output
+    assert "uno config_hash=0x09AA14EE" in output
     assert "mega config_hash" not in output
 
 

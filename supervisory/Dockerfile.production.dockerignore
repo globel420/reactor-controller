@@ -1,0 +1,8 @@
+**
+!supervisory/
+!supervisory/app/
+!supervisory/app/**
+!supervisory/requirements.txt
+!supervisory/Dockerfile.production
+!scripts/
+!scripts/load_firmware_env.py

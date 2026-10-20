@@ -1,0 +1,18 @@
+#!/usr/bin/env python3
+"""Installed entry point for the Reactor Controller Pi runtime."""
+
+from __future__ import annotations
+
+import importlib
+import os
+import sys
+
+LIBEXEC = os.environ.get("REACTOR_RUNTIME_LIBEXEC", "/usr/local/libexec")
+if LIBEXEC not in sys.path:
+    sys.path.insert(0, LIBEXEC)
+
+main = importlib.import_module("reactor_runtime").main
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

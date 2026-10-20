@@ -24,13 +24,56 @@
 [![Tailscale](https://img.shields.io/badge/Mesh%20VPN-Tailscale-6366f1?style=for-the-badge&logo=tailscale&logoColor=white)](https://github.com/globel420/reactor-controller)
 [![Hardware](https://img.shields.io/badge/Hardware-Pi%204%20%2F%20Pi%205%20%2B%20Dual%20MCU-ec4899?style=for-the-badge&logo=raspberrypi&logoColor=white)](https://github.com/globel420/reactor-controller)
 
-[Quick Start](#-60-second-quick-start) • [Architecture](#-system-architecture) • [Dashboard Views](#-dual-interface-scada-vs-controls) • [Hardware Wiring](#-hardware-topology--pinout) • [Peer Review](#-engineering-peer-review--safety-guarantees) • [Roadmap](#-strategic-roadmap--recommended-next-steps) • [Setup Guide](FRIEND_SETUP_GUIDE.md)
+[Pi Install](#-one-command-raspberry-pi-install) • [Developer Simulation](#-developer-simulation) • [Architecture](#-system-architecture) • [Dashboard Views](#-dual-interface-scada-vs-controls) • [Hardware Wiring](#-hardware-topology--pinout) • [Roadmap](#-strategic-roadmap--recommended-next-steps) • [Setup Guide](FRIEND_SETUP_GUIDE.md)
 
 </div>
 
 ---
 
-## ⚡ 60-Second Quick Start
+## ⚡ One-Command Raspberry Pi Install
+
+Start with a Raspberry Pi 4 or 5 running **Raspberry Pi OS Lite 64-bit Trixie**.
+Use Raspberry Pi Imager to create the initial recovery user and provide temporary
+Internet through Ethernet or preconfigured Wi-Fi. A stock OS cannot create the
+`Reactor-Rig` hotspot until this installer has been downloaded and run.
+
+Log into the Pi locally or over SSH, then paste this one line:
+
+```bash
+sudo apt-get update && sudo apt-get install -y curl ca-certificates && cd /tmp && curl --proto '=https' --tlsv1.2 -fLO https://github.com/globel420/reactor-controller/releases/download/v2.1.0/reactor-bootstrap.sh -O https://github.com/globel420/reactor-controller/releases/download/v2.1.0/SHA256SUMS && grep ' reactor-bootstrap.sh$' SHA256SUMS | sha256sum -c - && sudo bash /tmp/reactor-bootstrap.sh
+```
+
+The interactive installer updates Trixie, installs Docker and Tailscale from
+their signed repositories, creates the `reactor` administrator, optionally adds
+SSH keys, configures the recovery hotspot and upstream Wi-Fi, installs only the
+production release, and starts the real UI in fail-closed `UNCOMMISSIONED` mode.
+Firmware build/flash is optional and skipped by default. It never installs the
+emulators, tests, Git history, development dependencies, Agentic, or OpenClaw.
+
+After setup, the private owner sheet is written to:
+
+```text
+/home/reactor/REACTOR_CONNECTION_INFO.md
+```
+
+It contains the current LAN, hotspot, and Tailscale addresses; exact SSH
+commands; UI URLs; generated credentials; MCU state; and recovery commands. It
+is owned by `reactor` with mode `0600`.
+
+Network behavior after installation:
+
+- Ethernet connected: Ethernet is the preferred uplink and `wlan0` hosts `Reactor-Rig` with Internet sharing.
+- No Ethernet: the Pi uses the confirmed saved Wi-Fi client.
+- Client Wi-Fi failure: the Pi restores `Reactor-Rig` and pauses retries until `sudo reactorctl network retry`.
+- AP-to-client changes use a one-use browser confirmation link with a 300-second rollback window.
+
+> [!CAUTION]
+> The preserved browser shell, browser password controls, dashboard, and reactor
+> controls are unauthenticated, and the installer deliberately does not add an
+> inbound firewall. Use only a trusted LAN, hotspot, and tailnet. Never expose
+> ports 22, 80, 8000, 8001, or 3000 through public WAN port forwarding.
+
+### Developer Simulation
 
 The entire stack is packaged into a sterile, zero-dependency Docker environment with **built-in hardware physics emulators**. You can test the complete system, state machine, safety interlocks, and telemetry graphs on any machine without physical hardware attached.
 
@@ -46,10 +89,10 @@ cp .env.example .env
 ./scripts/apply_profile.sh
 ```
 
-The root `.env` is the only operator-edited mode and pin file. Keep
-`COMPOSE_PROFILES=simulation` for emulators. After the Pi, both MCUs, GPIO,
-firmware, and physical safety hardware are commissioned, change that one value
-to `COMPOSE_PROFILES=hardware` and run `./scripts/apply_profile.sh`. The helper
+The root `.env` is the developer mode and wiring file. Keep
+`COMPOSE_PROFILES=simulation` and `REACTOR_MODE=simulation` for emulators. The
+production Pi uses `/etc/reactor-controller/reactor.env` and guarded
+`reactorctl` commands instead of this development workflow. The helper
 tears down services from both profiles before bringing up exactly the selected
 stack. MCU pin changes in `.env` are compile-time inputs and require
 rebuilding/flashing that MCU. Hardware readiness compares target-specific
@@ -65,7 +108,7 @@ The profile helper refuses to silently reuse a legacy shared database.
 |---|---|---|---|
 | **🎛️ Machine Controls & Settings** | [`http://localhost:8000`](http://localhost:8000) | *None (Trusted Network Only)* | Active state control, setpoints, pump dosing, scale tare, host shell |
 | **📊 Embedded SCADA Analytics** | [`http://localhost:8000`](http://localhost:8000) *(Tab 2)* | *Anonymous Admin* | Live 1s dark cyberpunk SCADA operator console inside control panel |
-| **📈 Standalone Grafana Suite** | [`http://localhost:3000`](http://localhost:3000) | `admin` / `admin` | Full-screen telemetry, historical runs, and custom dashboard creator |
+| **📈 Standalone Grafana Suite** | [`http://localhost:3000`](http://localhost:3000) | Generated in the Pi report; `admin` / `admin` in simulation | Full-screen telemetry, historical runs, and custom dashboard creator |
 
 > [!TIP]
 > **Deploying to a Raspberry Pi?** Check out the step-by-step [**Friend Setup Guide (FRIEND_SETUP_GUIDE.md)**](FRIEND_SETUP_GUIDE.md) covering headless Pi 4/5 setup, automatic field Wi-Fi hotspots, and zero-port-forwarding remote access via Tailscale.
@@ -195,9 +238,13 @@ The system uses an optimized SQLite time-series storage pipeline:
 
 ### Sensor & Actuator Pin Assignments
 
-`.env` is the wiring source of truth. The defaults below match the current
-firmware build; edit the named variable before building if the physical rig is
-wired differently.
+The development checkout uses `.env`; the installed Pi uses
+`/etc/reactor-controller/reactor.env`. The defaults below match the current
+firmware build. Pin or polarity changes alter the MCU configuration hash and
+require a rebuild, flash, safe-state verification, and explicit hardware
+activation. Pins alone are not sufficient: the same file records
+`MEGA_HEATER_ACTIVE_HIGH`, `UNO_ENABLE_ACTIVE_LOW`, `PI_BUZZER_ACTIVE_HIGH`, and
+the three external safe-pull confirmations.
 
 | Channel | Sensor / Actuator | Controller | Interface / Pin | Notes |
 |---|---|---|---|---|
@@ -223,15 +270,20 @@ wired differently.
 Connect your rig securely to your private devices without opening router ports or paying for static public IPs:
 ```bash
 # On the Raspberry Pi:
-sudo tailscale up
+sudo reactorctl tailscale login
 ```
-Once connected, access the rig securely from anywhere at `http://<your-tailscale-ip>:8000` or `http://<your-tailscale-ip>:3000`.
+The initial installer offers this browser flow, which can create or join a
+tailnet, plus a one-time auth-key flow that keeps the key out of argv, logs,
+state, and the connection report. Tailscale SSH, subnet advertisement, and exit
+node advertisement remain disabled. Exact Tailnet URLs are written to the
+private connection report.
 
 ### 2. Standalone Field Wi-Fi Hotspot
 When operating out in the field without an internet connection:
-* The Pi automatically creates the WPA2-protected **`Reactor-Rig`** network configured by `setup_pi.sh`.
+* The Pi automatically restores the WPA2-protected **`Reactor-Rig`** network when Ethernet and saved client Wi-Fi are unavailable.
 * Connect from your phone, tablet, or laptop.
 * Open your browser and navigate to `http://10.42.0.1` — the built-in HTTP redirector automatically forwards you directly to the `:8000` supervisory control interface.
+* When Ethernet is connected, `Reactor-Rig` remains available and shares the Ethernet uplink. With only one Wi-Fi radio, client Wi-Fi and hotspot mode are mutually exclusive.
 
 ---
 
@@ -241,12 +293,13 @@ The test suite covers end-to-end state transitions, PID safety limits, sensor er
 
 ```bash
 # Run complete supervisory test suite
-PYTHONPATH=. pytest supervisory/tests scripts/tests -v
+uv run --python 3.12 --with-requirements supervisory/requirements.txt --with pytest \
+  pytest supervisory/tests scripts/tests host/tests deploy/production/tests -v
 ```
 
-```text
-======================= 103 passed =======================
-```
+Current `v2.1.0` release-candidate gate: **190/190 Python tests** plus
+**82/82 bootstrap assertions**, before firmware, Compose, image, and package
+smokes.
 
 ---
 

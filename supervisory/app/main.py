@@ -14,7 +14,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 from contextlib import asynccontextmanager
-from typing import List, Optional
+from typing import Optional
 from datetime import datetime
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -30,7 +30,7 @@ import urllib.error
 
 from .orchestrator import orchestrator
 from .config import settings
-from .database import engine, Base, get_db, RunsMetadata, Logs1s, Logs1m, Logs10m, ErrorLog, assert_database_schema
+from .database import get_db, RunsMetadata, Logs1s, assert_database_schema
 from .crud import get_history_downsampled, get_error_logs, get_run_analytics_summary
 
 
@@ -49,7 +49,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Reactor Supervisory Control & Process Analytics",
     description="Supervisory engine and telemetry pipeline for high-temperature bench reactor systems.",
-    version="2.0.0",
+    version="2.1.0",
     lifespan=lifespan
 )
 
@@ -76,6 +76,19 @@ def _raise_control_error(exc: Exception):
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     raise exc
 
+
+def _require_actuation_mode() -> None:
+    """Keep the real UI online while commissioning remains physically inert."""
+    if settings.REACTOR_MODE == "commissioning":
+        raise HTTPException(
+            status_code=423,
+            detail=(
+                "UNCOMMISSIONED: reactor actuation is locked until "
+                "reactorctl activate-hardware completes"
+            ),
+        )
+
+
 @app.post("/api/control/state/{state_id}", tags=["Control"])
 async def set_state(state_id: int):
     """
@@ -84,6 +97,7 @@ async def set_state(state_id: int):
     State 1: WARMUP (Preheating zones to target stabilization setpoints)
     State 2: WORKING (Full automated operation & dosing active)
     """
+    _require_actuation_mode()
     try:
         result = await orchestrator.set_state(state_id)
     except Exception as exc:
@@ -100,6 +114,7 @@ async def set_setpoint(zone: int, value: float, rate: float = 0.0):
     Zone 2: Gas Headspace Reactor (°C)
     Rate: Ramp rate limit in °C/min (0.0 = step change / max PID response).
     """
+    _require_actuation_mode()
     try:
         await orchestrator.send_setpoint(zone, value, rate)
     except Exception as exc:
@@ -110,6 +125,7 @@ async def set_setpoint(zone: int, value: float, rate: float = 0.0):
 @app.post("/api/control/estop", tags=["Control"])
 async def emergency_stop():
     """Latch the software safety trip and command both MCUs to a safe state."""
+    _require_actuation_mode()
     return await orchestrator.trip_safety(
         "ERR_OPERATOR_ESTOP",
         "Operator activated emergency stop",
@@ -120,6 +136,7 @@ async def emergency_stop():
 @app.post("/api/control/safety/reset", tags=["Control"])
 async def reset_safety():
     """Reset a trip only after safe, fresh STANDBY telemetry is verified."""
+    _require_actuation_mode()
     try:
         return await orchestrator.reset_safety()
     except Exception as exc:
@@ -129,6 +146,7 @@ async def reset_safety():
 @app.post("/api/control/alarm/silence", tags=["Alarms"])
 async def silence_alarm():
     """Silence audible buzzer hardware relay and web alarms for 5 minutes."""
+    _require_actuation_mode()
     return await orchestrator.silence_alarms()
 
 
@@ -150,6 +168,7 @@ async def update_alarm_config(config: dict):
 @app.post("/api/control/tare", tags=["Scale"])
 async def tare_loadcell():
     """Command Arduino Mega to tare the HX711 gravimetric load cell."""
+    _require_actuation_mode()
     try:
         await orchestrator.send_tare()
     except Exception as exc:
@@ -160,6 +179,7 @@ async def tare_loadcell():
 @app.post("/api/control/calibrate", tags=["Scale"])
 async def calibrate_loadcell(value: float):
     """Calibrate the Mega load cell using a known test weight in kilograms."""
+    _require_actuation_mode()
     try:
         await orchestrator.send_calibrate(value)
     except Exception as exc:
@@ -175,6 +195,7 @@ async def pump_manual(state: str, dir: int, speed: int):
     dir: 0=Clockwise, 1=Counter-Clockwise
     speed: Target RPM (0-240 RPM)
     """
+    _require_actuation_mode()
     try:
         result = await orchestrator.set_pump_manual(state, dir, speed)
     except Exception as exc:
@@ -188,6 +209,7 @@ async def pump_auto(min_w: float, max_w: float, rec_rpm: int, dir: int = 0):
     Configure automated gravimetric feedback dosing mode.
     Maintains feedstock mass between min_w and max_w by engaging pump at rec_rpm.
     """
+    _require_actuation_mode()
     try:
         orchestrator.set_pump_auto(min_w, max_w, rec_rpm, dir)
     except Exception as exc:
@@ -289,6 +311,7 @@ async def get_run_status(db: Session = Depends(get_db)):
 @app.post("/api/run/resume", tags=["Runs"])
 async def resume_run():
     """Restore last known setpoints, ramp profiles, and pump parameters after power outage or reboot."""
+    _require_actuation_mode()
     try:
         restored = await orchestrator.restore_last_configuration()
     except Exception as exc:

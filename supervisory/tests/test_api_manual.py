@@ -14,7 +14,7 @@ def require_simulation():
             health = json.loads(response.read().decode("utf-8"))
     except Exception as exc:
         raise RuntimeError(f"Simulation controller is not ready: {exc}") from exc
-    if health.get("mode") != "development":
+    if health.get("mode") != "simulation":
         raise RuntimeError("Refusing manual probe: target is not development/simulation mode")
 
 def post_req(url):

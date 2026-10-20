@@ -1,0 +1,400 @@
+name: Production release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+concurrency:
+  group: production-release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  REGISTRY: ghcr.io
+  SUPERVISORY_IMAGE_NAME: ghcr.io/${{ github.repository }}-supervisory
+  GRAFANA_IMAGE_NAME: ghcr.io/${{ github.repository }}-grafana
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+
+      - name: Require tag at the clean main HEAD
+        shell: bash
+        run: |
+          git fetch --no-tags origin main
+          main_sha=$(git rev-parse origin/main)
+          if [[ "$GITHUB_SHA" != "$main_sha" ]]; then
+            echo "::error::Production tags must point at the current origin/main HEAD"
+            exit 1
+          fi
+          test -z "$(git status --porcelain)"
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.12"
+
+      - name: Install pinned validation tools
+        run: python -m pip install uv==0.12.23 platformio==6.2.0 ruff==0.14.2
+
+      - name: Run Python tests in an isolated environment
+        run: >-
+          uv run --isolated --python 3.12
+          --with-requirements supervisory/requirements.txt
+          --with pytest==8.4.2
+          python -m pytest supervisory/tests scripts/tests host/tests deploy/production/tests -v
+
+      - name: Run bootstrap shell tests
+        run: bash installer/tests/test_reactor_bootstrap.sh
+
+      - name: Compile Python sources
+        run: >-
+          python -m compileall -q
+          supervisory/app host scripts deploy/production
+
+      - name: Lint release tooling
+        run: |
+          ruff check \
+            scripts/build_production_release.py \
+            scripts/tests/test_build_production_release.py \
+            deploy/production/bin/reactorctl \
+            deploy/production/lib/reactor_runtime.py \
+            deploy/production/tests/test_reactor_runtime.py \
+            host/system_manager.py \
+            host/tests/test_system_manager.py \
+            scripts/load_firmware_env.py \
+            scripts/tests/test_load_firmware_env.py \
+            supervisory/app/config.py \
+            supervisory/app/main.py \
+            supervisory/app/orchestrator.py \
+            supervisory/tests/test_commissioning_mode.py
+
+      - name: Validate production shell entrypoints
+        shell: bash
+        run: |
+          shell_files=(
+            reactor-bootstrap.sh
+            setup_pi.sh
+            scripts/configure_udev.sh
+            deploy/production/install_runtime_tools.sh
+          )
+          for file in "${shell_files[@]}"; do
+            bash -n "$file"
+          done
+          shellcheck "${shell_files[@]}"
+
+      - name: Validate commissioning and hardware Compose models
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          value = Path("reactor.env.example").read_text(encoding="utf-8")
+          digest = "sha256:" + "0" * 64
+          value = value.replace("__RELEASE_VERSION__", "v0.0.0-ci")
+          value = value.replace("__SUPERVISORY_IMAGE__", f"ghcr.io/example/supervisor@{digest}")
+          value = value.replace("__GRAFANA_IMAGE__", f"ghcr.io/example/grafana@{digest}")
+          Path("/tmp/reactor-ci.env").write_text(value, encoding="utf-8")
+          PY
+          docker compose --env-file /tmp/reactor-ci.env \
+            -f compose.production.yml --profile commissioning config > /tmp/commissioning.yaml
+          docker compose --env-file /tmp/reactor-ci.env \
+            -f compose.production.yml --profile hardware config > /tmp/hardware.yaml
+          test "$(docker compose --env-file /tmp/reactor-ci.env \
+            -f compose.production.yml --profile commissioning config --services | sort | tr '\n' ' ')" \
+            = "grafana supervisory-commissioning "
+          test "$(docker compose --env-file /tmp/reactor-ci.env \
+            -f compose.production.yml --profile hardware config --services | sort | tr '\n' ' ')" \
+            = "grafana supervisory-hardware "
+          ! grep -Eiq 'emulator|simulation|^[[:space:]]*build:' /tmp/commissioning.yaml /tmp/hardware.yaml
+
+      - name: Dry-run strict release payload generation
+        shell: bash
+        run: |
+          bootstrap_version=$(bash reactor-bootstrap.sh --version)
+          if [[ "$bootstrap_version" != "$GITHUB_REF_NAME" ]]; then
+            echo "::error::reactor-bootstrap.sh is pinned to ${bootstrap_version}, not tag ${GITHUB_REF_NAME}"
+            exit 1
+          fi
+          digest="sha256:$(printf '1%.0s' {1..64})"
+          python scripts/build_production_release.py \
+            --output-dir /tmp/reactor-release-assets \
+            --version "$GITHUB_REF_NAME" \
+            --source-commit "$GITHUB_SHA" \
+            --source-date-epoch "$(git show -s --format=%ct "$GITHUB_SHA")" \
+            --supervisory-image "${SUPERVISORY_IMAGE_NAME}@${digest}" \
+            --grafana-image "${GRAFANA_IMAGE_NAME}@${digest}" \
+            --include-firmware \
+            --bootstrap reactor-bootstrap.sh
+          (cd /tmp/reactor-release-assets && sha256sum -c SHA256SUMS)
+
+      - name: Build both MCU targets from the optional release archive
+        shell: bash
+        run: |
+          mkdir /tmp/reactor-release-firmware
+          tar -xzf "/tmp/reactor-release-assets/reactor-controller-firmware-${GITHUB_REF_NAME}.tar.gz" \
+            -C /tmp/reactor-release-firmware
+          REACTOR_ENV_FILE="$GITHUB_WORKSPACE/reactor.env.example" \
+            pio run --project-dir /tmp/reactor-release-firmware/firmware \
+              --environment megaatmega2560_main
+          REACTOR_ENV_FILE="$GITHUB_WORKSPACE/reactor.env.example" \
+            pio run --project-dir /tmp/reactor-release-firmware/pump_firmware \
+              --environment uno
+
+  images:
+    needs: validate
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    outputs:
+      supervisory: ${{ steps.refs.outputs.supervisory }}
+      grafana: ${{ steps.refs.outputs.grafana }}
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@29109295f81e9208d7d86ff1c6c12d2833863392 # v3.6.0
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
+
+      - name: Log in to GHCR
+        uses: docker/login-action@184bdaa0721073962dff0199f1fb9940f07167d1 # v3.5.0
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push ARM64 supervisory image
+        id: supervisory
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
+        with:
+          context: .
+          file: supervisory/Dockerfile.production
+          platforms: linux/arm64
+          push: true
+          tags: ${{ env.SUPERVISORY_IMAGE_NAME }}:${{ github.ref_name }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ github.ref_name }}
+          cache-from: type=gha,scope=supervisory-arm64
+          cache-to: type=gha,mode=max,scope=supervisory-arm64
+          provenance: mode=max
+          sbom: true
+
+      - name: Build and push ARM64 Grafana image with SQLite plugin
+        id: grafana
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
+        with:
+          context: .
+          file: grafana/Dockerfile.production
+          platforms: linux/arm64
+          push: true
+          tags: ${{ env.GRAFANA_IMAGE_NAME }}:${{ github.ref_name }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ github.ref_name }}
+          cache-from: type=gha,scope=grafana-arm64
+          cache-to: type=gha,mode=max,scope=grafana-arm64
+          provenance: mode=max
+          sbom: true
+
+      - name: Record immutable image references
+        id: refs
+        shell: bash
+        run: |
+          echo "supervisory=${SUPERVISORY_IMAGE_NAME}@${{ steps.supervisory.outputs.digest }}" >> "$GITHUB_OUTPUT"
+          echo "grafana=${GRAFANA_IMAGE_NAME}@${{ steps.grafana.outputs.digest }}" >> "$GITHUB_OUTPUT"
+
+      - name: Attest supervisory image provenance
+        uses: actions/attest@c32b4b8b198b65d0bd9d63490e847ff7b53989d4 # v4.0.0
+        with:
+          subject-name: ${{ env.SUPERVISORY_IMAGE_NAME }}
+          subject-digest: ${{ steps.supervisory.outputs.digest }}
+          push-to-registry: true
+
+      - name: Attest Grafana image provenance
+        uses: actions/attest@c32b4b8b198b65d0bd9d63490e847ff7b53989d4 # v4.0.0
+        with:
+          subject-name: ${{ env.GRAFANA_IMAGE_NAME }}
+          subject-digest: ${{ steps.grafana.outputs.digest }}
+          push-to-registry: true
+
+      - name: Prove both GHCR images are anonymously pullable
+        shell: bash
+        run: |
+          docker logout ghcr.io
+          for reference in \
+            "${{ steps.refs.outputs.supervisory }}" \
+            "${{ steps.refs.outputs.grafana }}"; do
+            if ! docker pull "$reference"; then
+              echo "::error::${reference} is not anonymously pullable. Set both GHCR packages to Public, then re-run this tag workflow. See .github/RELEASE_PREREQUISITES.md."
+              exit 1
+            fi
+          done
+
+      - name: Smoke-test image contents under ARM64 emulation
+        shell: bash
+        run: |
+          grafana_volume="reactor-grafana-image-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          trap 'docker volume rm "$grafana_volume" >/dev/null 2>&1 || true' EXIT
+          docker run --rm --platform linux/arm64 --entrypoint /bin/sh \
+            "${{ steps.refs.outputs.supervisory }}" -ec '
+              test -f /app/supervisory/app/main.py
+              test -f /app/supervisory/app/static/index.html
+              test ! -e /app/supervisory/tests
+              test ! -e /app/emulators
+              test ! -e /app/.git
+            '
+          docker volume create "$grafana_volume" >/dev/null
+          docker run --rm --platform linux/arm64 \
+            --volume "$grafana_volume:/var/lib/grafana" --entrypoint /bin/sh \
+            "${{ steps.refs.outputs.grafana }}" -ec '
+              test -f /var/lib/grafana-plugins/frser-sqlite-datasource/plugin.json
+              grep -Fq "\"version\": \"4.0.6\"" \
+                /var/lib/grafana-plugins/frser-sqlite-datasource/plugin.json
+            '
+          docker volume rm "$grafana_volume" >/dev/null
+          trap - EXIT
+
+      - name: Prove no-MCU commissioning mode is live but not ready
+        shell: bash
+        run: |
+          volume="reactor-ci-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          container="reactor-ci-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          cleanup() {
+            docker stop "$container" >/dev/null 2>&1 || true
+            docker rm "$container" >/dev/null 2>&1 || true
+            docker volume rm "$volume" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+          docker volume create "$volume" >/dev/null
+          docker run --rm --platform linux/arm64 --user 0:0 \
+            --volume "$volume:/app/data" --entrypoint /bin/sh \
+            "${{ steps.refs.outputs.supervisory }}" \
+            -ec 'chown 10001:10001 /app/data && chmod 0750 /app/data'
+          docker run --detach --platform linux/arm64 --name "$container" \
+            --env-file reactor.env.example \
+            --env APP_ENV=production \
+            --env REACTOR_MODE=commissioning \
+            --env DATABASE_URL=sqlite:////app/data/reactor_logs.db \
+            --env SAFETY_LATCH_FILE=/app/data/safety_latched \
+            --env ALARM_CONFIG_FILE=/app/data/alarm_config.json \
+            --env BUZZER_BACKEND=host \
+            --env HOST_SYSTEM_URL=http://127.0.0.1:65535 \
+            --env ALLOW_MOCK_GPIO=false \
+            --volume "$volume:/app/data" \
+            --publish 127.0.0.1::8000 \
+            "${{ steps.refs.outputs.supervisory }}" >/dev/null
+          port=$(docker inspect --format '{{(index (index .NetworkSettings.Ports "8000/tcp") 0).HostPort}}' "$container")
+          for _ in {1..30}; do
+            curl --fail --silent --show-error "http://127.0.0.1:${port}/api/live" \
+              --output /tmp/live.json && break
+            sleep 1
+          done
+          test "$(jq -r .mode /tmp/live.json)" = commissioning
+          test "$(curl --silent --output /tmp/health.json --write-out '%{http_code}' \
+            "http://127.0.0.1:${port}/api/health")" = 503
+          test "$(jq -r .ready /tmp/health.json)" = false
+          test "$(curl --silent --output /tmp/control.json --write-out '%{http_code}' \
+            --request POST "http://127.0.0.1:${port}/api/control/state/1")" = 423
+          grep -Fq UNCOMMISSIONED /tmp/control.json
+
+  release:
+    needs: images
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.12"
+
+      - name: Verify immutable releases are enabled
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          enabled=$(gh api -H "X-GitHub-Api-Version: 2026-03-10" \
+            "repos/${GITHUB_REPOSITORY}/immutable-releases" --jq .enabled 2>/dev/null || true)
+          if [[ "$enabled" != true ]]; then
+            echo "::error::Immutable releases must be enabled in repository Settings before tagging"
+            exit 1
+          fi
+
+      - name: Build final archives, checksums, manifest, and file SBOMs
+        shell: bash
+        run: |
+          python scripts/build_production_release.py \
+            --output-dir dist \
+            --version "$GITHUB_REF_NAME" \
+            --source-commit "$GITHUB_SHA" \
+            --source-date-epoch "$(git show -s --format=%ct "$GITHUB_SHA")" \
+            --supervisory-image "${{ needs.images.outputs.supervisory }}" \
+            --grafana-image "${{ needs.images.outputs.grafana }}" \
+            --include-firmware \
+            --bootstrap reactor-bootstrap.sh
+          (cd dist && sha256sum -c SHA256SUMS)
+
+      - name: Attest release asset provenance
+        uses: actions/attest@c32b4b8b198b65d0bd9d63490e847ff7b53989d4 # v4.0.0
+        with:
+          subject-path: dist/*
+
+      - name: Retain workflow copy of release assets
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: reactor-controller-${{ github.ref_name }}
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Create draft, attach every asset, then publish once
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          if gh release view "$GITHUB_REF_NAME" --json isDraft >/tmp/existing-release.json 2>/dev/null; then
+            test "$(jq -r .isDraft /tmp/existing-release.json)" = true || {
+              echo "::error::Release already exists and is published; immutable assets cannot be replaced"
+              exit 1
+            }
+          else
+            gh release create "$GITHUB_REF_NAME" --verify-tag --draft \
+              --title "$GITHUB_REF_NAME" --generate-notes
+          fi
+          gh release upload "$GITHUB_REF_NAME" dist/* --clobber
+          expected="$(find dist -maxdepth 1 -type f -printf '%f\n' | sort)"
+          actual="$(gh release view "$GITHUB_REF_NAME" --json assets \
+            --jq '.assets[].name' | sort)"
+          test "$actual" = "$expected"
+          gh release edit "$GITHUB_REF_NAME" --draft=false --latest
+          immutable=false
+          for _ in {1..10}; do
+            immutable=$(gh api -H "X-GitHub-Api-Version: 2026-03-10" \
+              "repos/${GITHUB_REPOSITORY}/releases/tags/${GITHUB_REF_NAME}" \
+              --jq .immutable)
+            [[ "$immutable" == true ]] && break
+            sleep 2
+          done
+          test "$immutable" = true
