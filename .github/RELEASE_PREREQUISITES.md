@@ -11,6 +11,11 @@ Complete these one-time repository/package settings before pushing the first
 3. Re-run the failed tag workflow. It logs out of GHCR and pulls both images by
    digest without credentials before any GitHub Release is published.
 
+Use an immutable `vX.Y.Z-rc.N` prerelease for the fresh-Pi acceptance run. The
+release builder rewrites only the published bootstrap asset so it downloads the
+matching prerelease assets. Publish the final `vX.Y.Z` tag only after the Pi
+network, reboot, SSH, UI, and Grafana acceptance matrix passes.
+
 A public GitHub repository does not automatically make linked container
 packages public. The fresh-Pi installer has no GHCR credential, so this gate is
 mandatory. Do not work around it by adding registry credentials to the

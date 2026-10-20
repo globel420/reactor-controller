@@ -117,11 +117,6 @@ jobs:
       - name: Dry-run strict release payload generation
         shell: bash
         run: |
-          bootstrap_version=$(bash reactor-bootstrap.sh --version)
-          if [[ "$bootstrap_version" != "$GITHUB_REF_NAME" ]]; then
-            echo "::error::reactor-bootstrap.sh is pinned to ${bootstrap_version}, not tag ${GITHUB_REF_NAME}"
-            exit 1
-          fi
           digest="sha256:$(printf '1%.0s' {1..64})"
           python scripts/build_production_release.py \
             --output-dir /tmp/reactor-release-assets \
@@ -133,6 +128,11 @@ jobs:
             --include-firmware \
             --bootstrap reactor-bootstrap.sh
           (cd /tmp/reactor-release-assets && sha256sum -c SHA256SUMS)
+          bootstrap_version=$(bash /tmp/reactor-release-assets/reactor-bootstrap.sh --version)
+          if [[ "$bootstrap_version" != "$GITHUB_REF_NAME" ]]; then
+            echo "::error::Generated bootstrap is pinned to ${bootstrap_version}, not tag ${GITHUB_REF_NAME}"
+            exit 1
+          fi
 
       - name: Build both MCU targets from the optional release archive
         shell: bash
@@ -388,7 +388,11 @@ jobs:
           actual="$(gh release view "$GITHUB_REF_NAME" --json assets \
             --jq '.assets[].name' | sort)"
           test "$actual" = "$expected"
-          gh release edit "$GITHUB_REF_NAME" --draft=false --latest
+          if [[ "$GITHUB_REF_NAME" == *-rc.* ]]; then
+            gh release edit "$GITHUB_REF_NAME" --draft=false --prerelease --latest=false
+          else
+            gh release edit "$GITHUB_REF_NAME" --draft=false --latest
+          fi
           immutable=false
           for _ in {1..10}; do
             immutable=$(gh api -H "X-GitHub-Api-Version: 2026-03-10" \

@@ -297,7 +297,7 @@ uv run --python 3.12 --with-requirements supervisory/requirements.txt --with pyt
   pytest supervisory/tests scripts/tests host/tests deploy/production/tests -v
 ```
 
-Current `v2.1.0` release-candidate gate: **190/190 Python tests** plus
+Current `v2.1.0` release-candidate gate: **191/191 Python tests** plus
 **82/82 bootstrap assertions**, before firmware, Compose, image, and package
 smokes.
 

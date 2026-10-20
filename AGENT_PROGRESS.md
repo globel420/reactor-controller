@@ -1,14 +1,14 @@
 # Agent Progress
 
 ## Current Resume Point
-- Last updated: 2026-10-20 02:31
-- Active goal: Deliver a production-only one-command Raspberry Pi installer and immutable v2.1.0 release pipeline.
-- Current status: Locally release-candidate complete; ready to commit/push for fresh-Pi acceptance. Tests remain repo/CI-only and are excluded from every Pi payload.
-- Files touched: reactor-bootstrap.sh, compose.production.yml, reactor.env.example, deploy/production/**, host/system_manager.py, supervisory/**, firmware/**, pump_firmware/**, .github/**, release/**, README.md, INSTALL.md, FRIEND_SETUP_GUIDE.md, AGENT_PROGRESS.md
-- Commands run: 190/190 Python tests; 82/82 bootstrap assertions; Ruff, ShellCheck, bash -n, actionlint, diff-check; both PlatformIO builds; both Compose profile renders; deterministic release SHA verification; local supervisor/Grafana Docker smokes.
-- Validation state: Runtime archive has 19 allowlisted production files and no tests/emulators/.git; optional firmware archive has 16 build inputs. Commissioning live=200, readiness=503, actuation=423. Grafana healthy with SQLite plugin 4.0.6. Existing simulator containers remained running.
-- Next action: Commit and push codex/pi-bootstrap-release. Run on a fresh Pi 4 Trixie with real networking/Tailscale, then make first GHCR packages public, merge exact validated commit to main, tag v2.1.0, and let the immutable release workflow publish assets.
-- Blockers: Final public release and a truthful fresh-Pi-ready claim still require the real Pi/Tailscale/NetworkManager reboot smoke. Physical hardware activation separately requires MCU/GPIO/SSR/pump/buzzer/E-STOP commissioning.
+- Last updated: 2026-10-20 02:35
+- Active goal: Publish an installable immutable v2.1.0-rc.1 for fresh-Pi acceptance without prematurely publishing final v2.1.0.
+- Current status: Release builder and tag workflow now support exact tag-pinned prerelease bootstraps and GitHub prerelease publication.
+- Files touched: scripts/build_production_release.py, scripts/tests/test_build_production_release.py, .github/workflows/release.yml, .github/RELEASE_PREREQUISITES.md, README.md, AGENT_PROGRESS.md
+- Commands run: 191/191 Python tests passed; release builder tests 14/14; Ruff and actionlint passed; v2.1.0-rc.1 asset build and every SHA256SUMS entry passed; generated bootstrap reports v2.1.0-rc.1.
+- Validation state: Prerelease assets remain production-only; final v2.1.0 README command is unchanged and will remain unpublished until fresh-Pi acceptance.
+- Next action: Commit/push prerelease support, merge draft PR to main, tag v2.1.0-rc.1, let Actions build images, make first GHCR packages public if required, rerun, and verify anonymous release installation assets.
+- Blockers: First GHCR package visibility can only be changed after packages exist. Fresh-Pi and physical hardware evidence remain pending.
 - Do not repeat: none recorded
 
 ## Chapter Log
@@ -79,3 +79,23 @@
 - Validation: Runtime archive has 19 allowlisted production files and no tests/emulators/.git; optional firmware archive has 16 build inputs. Commissioning live=200, readiness=503, actuation=423. Grafana healthy with SQLite plugin 4.0.6. Existing simulator containers remained running.
 - Next: Commit and push codex/pi-bootstrap-release. Run on a fresh Pi 4 Trixie with real networking/Tailscale, then make first GHCR packages public, merge exact validated commit to main, tag v2.1.0, and let the immutable release workflow publish assets.
 - Blockers: Final public release and a truthful fresh-Pi-ready claim still require the real Pi/Tailscale/NetworkManager reboot smoke. Physical hardware activation separately requires MCU/GPIO/SSR/pump/buzzer/E-STOP commissioning.
+
+### 2026-10-20 02:34 - Prepare immutable release candidate
+- Goal: Publish an installable immutable v2.1.0-rc.1 for fresh-Pi acceptance without prematurely publishing final v2.1.0.
+- Progress: User explicitly requested release readiness. Chosen boundary is an immutable prerelease so the GitHub-only bootstrap and public GHCR images can be exercised on the fresh Pi before the final tag.
+- Decisions: none recorded
+- Files changed: AGENT_PROGRESS.md, .github/workflows/release.yml, scripts/build_production_release.py
+- Commands/results: Verified branch 2b93169 is clean and origin-synchronized; immutable releases remain enabled.
+- Validation: Existing 190 Python tests, 82 bootstrap assertions, firmware builds, image smokes, and release archive gates remain green before prerelease adaptation.
+- Next: Make the release builder emit a tag-matched bootstrap, mark rc tags as prereleases, rerun gates, commit/push, merge clean PR to main, tag v2.1.0-rc.1, make GHCR packages public, rerun workflow, and verify anonymous assets.
+- Blockers: Fresh Pi execution remains pending; final v2.1.0 and physical actuator activation remain gated.
+
+### 2026-10-20 02:35 - Prerelease pipeline ready
+- Goal: Publish an installable immutable v2.1.0-rc.1 for fresh-Pi acceptance without prematurely publishing final v2.1.0.
+- Progress: Added deterministic bootstrap version rewriting, rc tag validation, prerelease/latest selection, RC guidance, and a regression test proving v2.1.0-rc.1 downloads only matching assets.
+- Decisions: none recorded
+- Files changed: scripts/build_production_release.py, scripts/tests/test_build_production_release.py, .github/workflows/release.yml, .github/RELEASE_PREREQUISITES.md, README.md, AGENT_PROGRESS.md
+- Commands/results: 191/191 Python tests passed; release builder tests 14/14; Ruff and actionlint passed; v2.1.0-rc.1 asset build and every SHA256SUMS entry passed; generated bootstrap reports v2.1.0-rc.1.
+- Validation: Prerelease assets remain production-only; final v2.1.0 README command is unchanged and will remain unpublished until fresh-Pi acceptance.
+- Next: Commit/push prerelease support, merge draft PR to main, tag v2.1.0-rc.1, let Actions build images, make first GHCR packages public if required, rerun, and verify anonymous release installation assets.
+- Blockers: First GHCR package visibility can only be changed after packages exist. Fresh-Pi and physical hardware evidence remain pending.

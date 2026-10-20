@@ -47,7 +47,10 @@ class ProductionReleaseTests(unittest.TestCase):
             "GRAFANA_IMAGE=__GRAFANA_IMAGE__\n",
             encoding="utf-8",
         )
-        (self.root / "reactor-bootstrap.sh").write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+        (self.root / "reactor-bootstrap.sh").write_text(
+            '#!/bin/sh\nreadonly RELEASE_VERSION="v2.1.0"\nexit 0\n',
+            encoding="utf-8",
+        )
         self.runtime_paths = (
             PurePosixPath("payload/runtime.txt"),
             PurePosixPath("reactor.env.example"),
@@ -105,6 +108,25 @@ class ProductionReleaseTests(unittest.TestCase):
         for line in lines:
             digest, filename = line.split("  ", 1)
             self.assertEqual(digest, hashlib.sha256((output / filename).read_bytes()).hexdigest())
+
+    def test_prerelease_bootstrap_is_pinned_to_exact_tag(self) -> None:
+        output = self.root / "dist-rc"
+        release.build_release(
+            repo_root=self.root,
+            output_dir=output,
+            version="v2.1.0-rc.1",
+            source_commit=COMMIT,
+            source_date_epoch=EPOCH,
+            supervisory_image=SUPERVISORY_IMAGE,
+            grafana_image=GRAFANA_IMAGE,
+            include_firmware=False,
+            bootstrap=Path("reactor-bootstrap.sh"),
+            runtime_paths=self.runtime_paths,
+        )
+
+        bootstrap = (output / "reactor-bootstrap.sh").read_text(encoding="utf-8")
+        self.assertIn('readonly RELEASE_VERSION="v2.1.0-rc.1"', bootstrap)
+        self.assertNotIn('readonly RELEASE_VERSION="v2.1.0"', bootstrap)
 
     def test_sbom_lists_only_archived_files(self) -> None:
         output, manifest = self.build()

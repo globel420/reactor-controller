@@ -68,6 +68,9 @@ FORBIDDEN_SUFFIXES = (".db", ".db-shm", ".db-wal", ".log", ".pyc", ".pyo", ".sql
 VERSION_RE = re.compile(r"v[0-9]+\.[0-9]+\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?\Z")
 COMMIT_RE = re.compile(r"[0-9a-f]{40,64}\Z")
 IMAGE_RE = re.compile(r"[^\s@]+@sha256:[0-9a-f]{64}\Z")
+BOOTSTRAP_VERSION_RE = re.compile(
+    rb'^readonly RELEASE_VERSION="[^"]+"$', re.MULTILINE
+)
 EXPECTED_IMAGE_PREFIXES = {
     "supervisory": "ghcr.io/globel420/reactor-controller-supervisory@sha256:",
     "grafana": "ghcr.io/globel420/reactor-controller-grafana@sha256:",
@@ -95,6 +98,21 @@ def _sha256_file(path: Path) -> str:
         for chunk in iter(lambda: stream.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def versioned_bootstrap(content: bytes, version: str) -> bytes:
+    """Pin the standalone bootstrap to the exact immutable release tag."""
+
+    matches = BOOTSTRAP_VERSION_RE.findall(content)
+    if len(matches) != 1:
+        raise ReleaseBuildError(
+            "bootstrap must contain exactly one readonly RELEASE_VERSION assignment"
+        )
+    return BOOTSTRAP_VERSION_RE.sub(
+        f'readonly RELEASE_VERSION="{version}"'.encode("ascii"),
+        content,
+        count=1,
+    )
 
 
 def _safe_relative_path(raw: str) -> PurePosixPath:
@@ -467,7 +485,7 @@ def build_release(
             except ValueError as exc:
                 raise ReleaseBuildError("bootstrap asset must be inside the repository") from exc
             target = stage / "reactor-bootstrap.sh"
-            shutil.copyfile(source, target)
+            target.write_bytes(versioned_bootstrap(source.read_bytes(), version))
             target.chmod(0o755)
             assets["bootstrap"] = {
                 "name": target.name,
