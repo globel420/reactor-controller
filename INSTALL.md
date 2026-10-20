@@ -128,7 +128,7 @@ Lite 64-bit Trixie. It downloads an immutable release rather than cloning the
 repository and never installs the emulator or test tree.
 
 ```bash
-sudo apt-get update && sudo apt-get install -y curl ca-certificates && cd /tmp && curl --proto '=https' --tlsv1.2 -fLO https://github.com/globel420/reactor-controller/releases/download/v2.1.0/reactor-bootstrap.sh -O https://github.com/globel420/reactor-controller/releases/download/v2.1.0/SHA256SUMS && grep ' reactor-bootstrap.sh$' SHA256SUMS | sha256sum -c - && sudo bash /tmp/reactor-bootstrap.sh
+sudo apt-get update && sudo apt-get install -y curl ca-certificates && cd /tmp && curl --proto '=https' --tlsv1.2 -fLO https://github.com/globel420/reactor-controller/releases/download/v2.1.1/reactor-bootstrap.sh -O https://github.com/globel420/reactor-controller/releases/download/v2.1.1/SHA256SUMS && grep ' reactor-bootstrap.sh$' SHA256SUMS | sha256sum -c - && sudo bash /tmp/reactor-bootstrap.sh
 ```
 
 The installer creates the `reactor` administrator, preserves the Pi-Imager
