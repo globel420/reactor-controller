@@ -1,0 +1,14 @@
+[Unit]
+Description=Reactor Controller fail-closed production preflight
+Requires=reactor-system-manager.service
+Wants=docker.service
+After=docker.service reactor-network-mode.service reactor-system-manager.service
+Before=reactor-stack.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/reactorctl preflight
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

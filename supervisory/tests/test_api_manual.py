@@ -7,6 +7,16 @@ __test__ = False
 
 BASE_URL = "http://localhost:8000"
 
+
+def require_simulation():
+    try:
+        with urllib.request.urlopen(f"{BASE_URL}/api/health", timeout=2) as response:
+            health = json.loads(response.read().decode("utf-8"))
+    except Exception as exc:
+        raise RuntimeError(f"Simulation controller is not ready: {exc}") from exc
+    if health.get("mode") != "simulation":
+        raise RuntimeError("Refusing manual probe: target is not development/simulation mode")
+
 def post_req(url):
     try:
         # Empty POST
@@ -41,6 +51,7 @@ def get_history():
         print(f"Error getting history: {e}")
 
 if __name__ == "__main__":
+    require_simulation()
     print("--- Starting API Test (urllib version) ---")
     start_warmup()
     time.sleep(1)

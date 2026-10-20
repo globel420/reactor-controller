@@ -7,6 +7,7 @@ Wants=NetworkManager.service
 Type=simple
 User=root
 WorkingDirectory=/home/pi/reactor-controller
+EnvironmentFile=/home/pi/reactor-controller/.env
 ExecStart=/usr/bin/python3 /home/pi/reactor-controller/host/system_manager.py
 Restart=always
 RestartSec=5

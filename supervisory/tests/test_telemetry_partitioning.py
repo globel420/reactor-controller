@@ -1,11 +1,12 @@
 import pytest
 from datetime import datetime, timedelta
 from sqlalchemy import text
-from supervisory.app.database import Base, SessionLocal, engine, Logs1s, RunsMetadata, init_db
+from supervisory.app.database import Base, SessionLocal, engine, Logs1s, RunsMetadata, init_db, assert_safe_test_database
 from supervisory.app.crud import create_log, get_history_downsampled
 
 @pytest.fixture(autouse=True)
 def setup_db():
+    assert_safe_test_database()
     init_db()
     with SessionLocal() as db:
         db.query(Logs1s).delete()

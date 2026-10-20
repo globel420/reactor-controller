@@ -1,0 +1,11 @@
+[Unit]
+Description=Refresh Reactor Controller connection report
+After=reactor-stack.service tailscaled.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/reactorctl credentials-report
+
+[Install]
+WantedBy=multi-user.target

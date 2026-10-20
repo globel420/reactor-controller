@@ -36,6 +36,3 @@ class TestErrorLogging(unittest.TestCase):
         self.assertEqual(len(logs_after), 1)
         self.assertFalse(logs_after[0]["active"])
         self.assertIsNotNone(logs_after[0]["cleared_timestamp"])
-
-if __name__ == "__main__":
-    unittest.main()

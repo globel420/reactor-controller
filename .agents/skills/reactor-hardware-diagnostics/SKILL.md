@@ -9,14 +9,18 @@ description: >-
 
 Use this skill when diagnosing physical sensor read errors, stepper motor stalling, load cell drift, or verifying the dual-MCU wiring topology.
 
-## 1. MAX31865 RTD PT100 Temperature Diagnostics
+## 1. Temperature Sensor Diagnostics
 
-The system monitors 5 independent PT100 RTD temperature channels via MAX31865 SPI breakout boards on the Arduino Mega 2560:
-- Preheater: CS Pin 53
-- Liquid Core: CS Pin 49
-- Gas Headspace (Internal): CS Pin 48
-- Gas Headspace (External): CS Pin 47
-- Feed Reservoir: CS Pin 46
+The current firmware uses four PT100/MAX31865 process channels and two
+MAX31855 thermocouples. The repository root `.env` is the wiring source of
+truth; defaults are:
+
+- Preheater RTD: `MEGA_PIN_RTD_PREHEATER=40`
+- Liquid Core RTD: `MEGA_PIN_RTD_LIQUID=42`
+- Gas Headspace Internal RTD: `MEGA_PIN_RTD_GAS_INT=44`
+- Gas Headspace External RTD: `MEGA_PIN_RTD_GAS_EXT=46`
+- Feed Reservoir thermocouple: `MEGA_PIN_TC_FEED_RES=38`
+- Electronics Housing thermocouple: `MEGA_PIN_TC_HOUSING=36`
 
 ### Error Bitmask Decoding (Fault Register `0x07`):
 When a sensor reports an error code, map the decimal value to these binary flags:
@@ -41,9 +45,9 @@ When a sensor reports an error code, map the decimal value to these binary flags
 ## 2. TB6600 Stepper Driver & Peristaltic Pump Diagnostics
 
 Controlled by Arduino Uno R3:
-- Enable: Pin 8 (Active Low)
-- Direction: Pin 9
-- Step / CLK: Pin 10
+- Enable: `UNO_PIN_ENABLE=8` (Active Low)
+- Step / CLK: `UNO_PIN_STEP=9`
+- Direction: `UNO_PIN_DIRECTION=10`
 
 ### Troubleshooting Steps:
 1. **DIP Switch Settings (TB6600)**:
@@ -57,25 +61,24 @@ Controlled by Arduino Uno R3:
 
 ## 3. HX711 Gravimetric Load Cell Calibration
 
-- Data Pin: Arduino Mega Pin A2
-- Clock Pin: Arduino Mega Pin A3
+- Data Pin: `MEGA_PIN_HX711_DT=3`
+- Clock Pin: `MEGA_PIN_HX711_SCK=2`
 
 ### Calibration Procedure:
 1. Remove all weight from the reagent platform.
 2. Trigger Tare via Supervisory UI (`POST /api/control/tare`) or shell command.
-3. Place a certified reference mass (e.g. $1000.0\text{g}$).
-4. Read raw ADC counts: $\text{Calibration Factor} = \frac{\text{Raw Counts} - \text{Tare Offset}}{\text{Known Mass (g)}}$.
+3. Place a certified reference mass (for example, $1.000\text{ kg}$).
+4. Enter that known mass in **kilograms**. Firmware stores a versioned,
+   checksummed counts-per-kilogram scale only after a successful current-session tare.
 
 ---
 
 ## 4. Raspberry Pi GPIO 26 Buzzer Relay Test
 
-The audible siren is wired to Pi **GPIO 26** (Physical Pin 37, Ground on Pin 39):
+The audible siren defaults to `PI_BUZZER_GPIO=26` (Physical Pin 37, Ground on Pin 39). Confirm `.env` before testing:
 ```bash
-# Test 1.5s pulse directly on the host
-pinctrl set 26 op dh && sleep 1.5 && pinctrl set 26 op dl
-```
-Or trigger via the Host System Manager API:
-```bash
-curl -X POST http://localhost:8001/api/host/buzzer-test
+# Trigger the host manager's bounded 1.5s pulse through the existing proxy.
+curl -X POST http://localhost:8000/api/system/exec \
+  -H 'Content-Type: application/json' \
+  -d '{"command":"test-buzzer"}'
 ```

@@ -1,0 +1,13 @@
+[Unit]
+Description=Reactor Controller Ethernet and Wi-Fi mode monitor
+Requires=NetworkManager.service
+After=reactor-network-mode.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/sbin/reactorctl _network-monitor
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

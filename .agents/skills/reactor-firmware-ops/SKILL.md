@@ -1,99 +1,72 @@
 ---
 name: reactor-firmware-ops
 description: >-
-  Building, compiling, validating, and flashing dual-MCU firmware (Arduino Mega 2560 and Arduino Uno R3)
-  using PlatformIO, serial JSON frame protocols, and hardware safety flashing procedures.
+  Build, validate, safely flash, and verify the Reactor Controller Arduino Mega
+  2560 and Uno R3 firmware with pinned PlatformIO inputs and production
+  configuration fingerprints.
 ---
 
-# Reactor Dual-MCU Firmware Operations Runbook
+# Reactor Dual-MCU Firmware Operations
 
-Use this skill when modifying, compiling, or uploading firmware to the Arduino Mega 2560 (sensor & thermal controller) or Arduino Uno R3 (stepper dosing pump controller).
+Use this skill for Mega/Uno firmware configuration, compilation, serial
+verification, UDEV identity, or guarded upload work.
 
-## 1. Toolchain & Environments
+## Targets
 
-PlatformIO Core executable is located at:
-`/Users/globel/.platformio/penv/bin/platformio` (or `platformio` in path).
+| Controller | Project | Environment | Installed device |
+|---|---|---|---|
+| Mega 2560 sensors/heaters | `firmware/` | `megaatmega2560_main` | `/dev/sensor_arduino` |
+| Uno R3 pump | `pump_firmware/` | `uno` | `/dev/pump_arduino` |
 
-### Target Definitions:
-| Controller | Directory | Environment | Port | Target Responsibilities |
-|---|---|---|---|---|
-| **Mega 2560** | `firmware/` | `megaatmega2560_main` | `/dev/ttyACM0` (or `:9999`) | 5x MAX31865 RTDs, 3x SSR Heaters (PWM), HX711, MQ-8, Watchdog |
-| **Uno R3** | `pump_firmware/` | `uno_pump` (or `uno`) | `/dev/ttyACM1` (or `:9998`) | TB6600 Stepper Driver, direction, pulse generation, microstepping |
+PlatformIO Core is pinned to `6.2.0`; AVR platform and every direct/transitive
+library are pinned in the two `platformio.ini` files.
 
----
+## Configuration identity
 
-## 2. Compilation & Verification Commands
+Development builds read the repository `.env`. Installed Pi builds read
+`/etc/reactor-controller/reactor.env`. Pins, heartbeat deadline, Mega heater
+polarity, and Uno enable polarity are included in target-specific v2 FNV-1a
+configuration fingerprints. Any change requires rebuild, flash, and verification.
+
+Validate without uploading:
 
 ```bash
-# Verify and compile Arduino Mega firmware
-platformio run --project-dir firmware -e megaatmega2560_main
-
-# Verify and compile Arduino Uno pump firmware
-platformio run --project-dir pump_firmware -e uno
+python3 scripts/load_firmware_env.py --env-file .env --check
+REACTOR_ENV_FILE=.env platformio run --project-dir firmware -e megaatmega2560_main
+REACTOR_ENV_FILE=.env platformio run --project-dir pump_firmware -e uno
 ```
 
----
+## Production Pi workflow
 
-## 3. Safe Flashing Protocol
+Use the guarded command; do not run raw `pio -t upload` on the installed rig:
 
-> [!CAUTION]
-> **FLASHING SAFETY RULE**: Flashing an MCU causes a hardware reboot via DTR line toggle. During bootloader execution, GPIO pins float or reset to high-impedance inputs, which can leave solid-state relays in an unknown state if pull-downs are weak.
+```bash
+sudo reactorctl firmware menu
+```
 
-**Mandatory Pre-Flash Procedure**:
-1. Transition supervisory engine to `STANDBY` (State 0):
-   ```bash
-   curl -X POST http://localhost:8000/api/control/state/0
-   ```
-2. Confirm all heater PWM duty cycles read `0.0%`:
-   ```bash
-   curl -s http://localhost:8000/api/history?hours=0 | tail -n 1
-   ```
-3. Stop the container or disconnect supervisory serial link:
-   ```bash
-   docker stop reactor_supervisory
-   ```
-4. Flash the target microcontroller:
-   ```bash
-   platformio run --project-dir firmware -e megaatmega2560_main --target upload --upload-port /dev/ttyACM0
-   ```
-5. Restart the supervisory daemon:
-   ```bash
-   docker start reactor_supervisory
-   ```
+The default is skip. Build-only compiles both controllers. Flash mode always
+builds both before uploading either, flashes Mega before Uno, and never sends a
+pump START command.
 
----
+Mandatory pre-flash conditions:
 
-## 4. Serial Communication Frame Protocol
+1. Heater contactor open and heater power physically disconnected.
+2. Pump motor supply physically disconnected.
+3. Pi/USB low-voltage electronics only.
+4. Reactor in confirmed STANDBY if the supervisor is connected.
+5. Supervisor stopped and serial ports proven released.
+6. External SSR safe pulls and TB6600 enable safe pull physically verified.
+7. Type the exact power-isolation and pin-map confirmations requested.
 
-* **Outbound Mega Telemetry (1Hz JSON)**:
-  ```json
-  {
-    "uptime": 1245,
-    "state": 2,
-    "sensors": {
-      "status": 0,
-      "weight": 4.852,
-      "t_feed_res": 24.5,
-      "t_feed_pre": 120.2,
-      "t_liq_reac": 180.5,
-      "t_gas_reac_int": 210.0,
-      "t_gas_reac_ext": 208.5,
-      "h2": 12.0
-    },
-    "heaters": {
-      "feed_pre": 45.0,
-      "liq_reac": 65.0,
-      "gas_reac": 35.0
-    },
-    "sp": {
-      "feed_pre": 120.0,
-      "liq_reac": 180.0,
-      "gas_reac": 210.0
-    }
-  }
-  ```
-* **Inbound Control Commands**:
-  - Setpoint: `{"cmd": "setpoint", "zone": <0|1|2>, "val": <temp_c>, "rate": <c_per_min>}`
-  - State: `{"cmd": "state", "val": <0|1|2>}`
-  - Tare Scale: `{"cmd": "tare"}`
-  - Heartbeat Watchdog Ping: `{"cmd": "ping"}` (Must be received within 3.0s or heaters clamp to 0%).
+After upload, Mega must report STANDBY, zero heater duty, and the expected hash.
+Uno must acknowledge STOP and return the expected hash to PING. Any failure or
+partial upload leaves a non-verified receipt and commissioning mode selected.
+
+## Identity rules
+
+Prefer unique `ID_SERIAL_SHORT` values. If a controller has no unique serial,
+`reactorctl firmware configure-udev --acknowledge-cable-binding` permits exact
+`ID_PATH` binding only after the operator accepts that moving the cable requires
+recommissioning. VID/PID-only matching is forbidden.
+
+Never flash automatically on boot, update, deployment, or USB insertion.

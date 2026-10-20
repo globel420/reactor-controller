@@ -4,7 +4,19 @@ import json
 import time
 import sys
 
+__test__ = False
+
 BASE_URL = "http://localhost:8000"
+
+
+def require_simulation():
+    try:
+        with urllib.request.urlopen(f"{BASE_URL}/api/health", timeout=2) as response:
+            health = json.loads(response.read().decode())
+    except Exception as exc:
+        raise RuntimeError(f"Simulation controller is not ready: {exc}") from exc
+    if health.get("mode") != "simulation":
+        raise RuntimeError("Refusing manual probe: target is not development/simulation mode")
 
 def send_setpoint(zone, value):
     url = f"{BASE_URL}/api/control/setpoint?zone={zone}&value={value}&rate=0"
@@ -29,6 +41,7 @@ def get_latest_telemetry():
         return None
 
 def test():
+    require_simulation()
     print("Testing Dual-Zone Control...")
     
     # Set Zone 1 (Liquid phase reactor) to 123.4

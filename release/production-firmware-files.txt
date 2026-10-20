@@ -1,0 +1,16 @@
+# Only inputs consumed by the two production PlatformIO environments.
+scripts/load_firmware_env.py
+firmware/platformio.ini
+firmware/include/HeaterController.h
+firmware/include/SensorManager.h
+firmware/include/SerialComms.h
+firmware/include/WeightedAverage.h
+firmware/include/config.h
+firmware/lib/PWFusion_MAX31865/PwFusion_MAX31865.cpp
+firmware/lib/PWFusion_MAX31865/PwFusion_MAX31865.h
+firmware/src/HeaterController.cpp
+firmware/src/SensorManager.cpp
+firmware/src/SerialComms.cpp
+firmware/src/main.cpp
+pump_firmware/platformio.ini
+pump_firmware/src/main.cpp

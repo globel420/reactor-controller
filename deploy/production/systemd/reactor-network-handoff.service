@@ -1,0 +1,17 @@
+[Unit]
+Description=Reactor Controller one-use client Wi-Fi confirmation
+Requires=NetworkManager.service
+After=NetworkManager.service
+Conflicts=reactor-network-monitor.service
+OnSuccess=reactor-network-monitor.service
+OnFailure=reactor-network-monitor.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/sbin/reactorctl _handoff-worker
+StandardOutput=null
+StandardError=journal
+TimeoutStartSec=infinity
+RuntimeMaxSec=420
+
+# This unit is started explicitly for a pending handoff and is never enabled.

@@ -1,0 +1,15 @@
+.git
+.gitignore
+.env
+.env.*
+!.env.example
+.pio
+.pytest_cache
+**/__pycache__
+**/*.py[cod]
+data
+*.db
+*.db-shm
+*.db-wal
+AGENT_PROGRESS.md
+peer-review

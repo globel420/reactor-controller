@@ -73,6 +73,18 @@ This guide provides instructions for setting up both the **embedded firmware** (
 
 The system uses two separate firmware projects built with **PlatformIO**.
 
+In a development checkout, copy `.env.example` to `.env` and verify every
+`MEGA_PIN_*`, `UNO_PIN_*`, polarity, and `MCU_HEARTBEAT_TIMEOUT_MS` value
+against the physical wiring. Both PlatformIO projects load these build-time
+values from that one file. An installed Pi instead uses the guarded
+`sudo reactorctl firmware menu` workflow and
+`/etc/reactor-controller/reactor.env`.
+
+> [!CAUTION]
+> Before any upload, transition to STANDBY, physically disconnect heater and
+> pump actuator power, stop the supervisor, and verify the external fail-safe
+> pulls. A bootloader reset makes MCU output pins temporarily high impedance.
+
 ### Option A: VS Code (Recommended)
 
 1. Install **Visual Studio Code** and the **PlatformIO IDE** extension.
@@ -80,63 +92,74 @@ The system uses two separate firmware projects built with **PlatformIO**.
 3. Open the `pump_firmware` folder to flash the **Pump Arduino** (Uno).
 4. Use the PlatformIO sidebar to Upload to the respective boards.
 
-### Option B: Command Line (CLI) - Linux/Raspberry Pi
+### Option B: Command Line (CLI) — Development Checkout
 
-1. Install PlatformIO Core:
+1. Install the same pinned PlatformIO Core used by the release workflow:
 
    ```bash
-   curl -fsSL -o get-platformio.py https://raw.githubusercontent.com/platformio/platformio-core-installer/master/get-platformio.py
-   python3 get-platformio.py
+   python3 -m venv .platformio-venv
+   .platformio-venv/bin/pip install platformio==6.2.0
    ```
 
 2. Flash the Sensor Arduino:
 
    ```bash
-   cd ~/reactor-controller/firmware
-   ~/.platformio/penv/bin/pio run -t upload
+   cd ~/reactor-controller
+   REACTOR_ENV_FILE=.env .platformio-venv/bin/pio run \
+     --project-dir firmware -e megaatmega2560_main -t upload \
+     --upload-port /dev/sensor_arduino
    ```
 
 3. Flash the Pump Arduino:
 
    ```bash
-   cd ~/reactor-controller/pump_firmware
-   ~/.platformio/penv/bin/pio run -t upload
+   cd ~/reactor-controller
+   REACTOR_ENV_FILE=.env .platformio-venv/bin/pio run \
+     --project-dir pump_firmware -e uno -t upload \
+     --upload-port /dev/pump_arduino
    ```
 
 ---
 
-## 3. Supervisory System Installation (Raspberry Pi)
+## 3. Automated Raspberry Pi Production Setup
 
-We provide an automated deployment script to handle installation on the Raspberry Pi.
-
-### Automated Installation
-
-1. Copy `deploy_pi.py` to your Raspberry Pi.
-2. Run the script:
-
-   ```bash
-   python3 deploy_pi.py
-   ```
-
-   *This script will:*
-   - Install system dependencies (`git`, `python3-venv`).
-   - Clone this repository to `~/reactor-controller`.
-   - Create a virtual environment and install Python requirements.
-   - Add your user to the `dialout` group for serial access.
-
-### Running the Application
-
-After installation, the script will provide instructions. To start the server manually:
+The production path targets a fresh Raspberry Pi 4/5 running Raspberry Pi OS
+Lite 64-bit Trixie. It downloads an immutable release rather than cloning the
+repository and never installs the emulator or test tree.
 
 ```bash
-cd ~/reactor-controller
-./venv/bin/uvicorn supervisory.main:app --host 0.0.0.0 --port 8000
+sudo apt-get update && sudo apt-get install -y curl ca-certificates && cd /tmp && curl --proto '=https' --tlsv1.2 -fLO https://github.com/globel420/reactor-controller/releases/download/v2.1.0/reactor-bootstrap.sh -O https://github.com/globel420/reactor-controller/releases/download/v2.1.0/SHA256SUMS && grep ' reactor-bootstrap.sh$' SHA256SUMS | sha256sum -c - && sudo bash /tmp/reactor-bootstrap.sh
 ```
 
-### Accessing the Interface
+The installer creates the `reactor` administrator, preserves the Pi-Imager
+recovery user, enables password SSH with an optional public key, configures
+Tailscale and dynamic Ethernet/hotspot/client-Wi-Fi operation, installs the
+digest-pinned production images, and writes the private connection sheet to
+`/home/reactor/REACTOR_CONNECTION_INFO.md`.
 
-Open a web browser on any device on the same network and navigate to:
-`http://<RASPBERRY_PI_IP>:8000`
+The initial service is always `commissioning`: the real UI and Grafana start,
+`/api/live` is healthy, `/api/health` reports `UNCOMMISSIONED`, no MCU devices
+are mapped, and reactor actuation is rejected. There is no simulation fallback.
+
+Production configuration lives only at
+`/etc/reactor-controller/reactor.env`. Pin and polarity edits invalidate the
+firmware fingerprints. Hardware mode requires matching verified firmware,
+stable device identities, physical safe-pull confirmations, successful
+de-energized/low-energy commissioning, and explicit activation:
+
+```bash
+sudo reactorctl firmware menu
+sudo reactorctl status
+sudo reactorctl activate-hardware
+```
+
+The installer is resumable through `/var/lib/reactor-installer`. Routine
+updates use `sudo reactorctl update --version vX.Y.Z`; they verify checksums,
+switch releases atomically, and roll back if the new stack fails liveness.
+
+The existing unauthenticated browser shell/password administration is
+preserved and no inbound firewall is installed. Use only a trusted LAN,
+`Reactor-Rig`, or tailnet, and never configure public WAN forwarding.
 
 ---
 
@@ -148,19 +171,20 @@ To develop or test the supervisory control logic without physical hardware (Ardu
 
 Ensure you have **Docker** and **Docker Compose** installed and running.
 
-1. Build and start the services:
+1. Create the operator configuration and keep its default simulation profile:
 
    ```bash
-   docker compose build
-   docker compose up
+   cp .env.example .env
+   ./scripts/apply_profile.sh
    ```
 
    *This starts:*
    - **supervisory** (FastAPI at `http://localhost:8000`)
-   - **sensor_emulator** (TCP port `9999`)
-   - **pump_emulator** (TCP port `9998`)
+   - **grafana** (SCADA dashboards at `http://localhost:3000`)
+   - **sensor-emulator** (TCP port `9999` + **Fault Injection Dashboard at `http://localhost:9990`**)
+   - **pump-emulator** (TCP port `9998`)
 
-2. Open `http://localhost:8000` in your web browser.
+2. Open `http://localhost:8000` for the Reactor SCADA UI, or `http://localhost:9990` for the Environment & Fault Injection Console.
 
 ### Option B: Running Locally (Without Docker)
 
@@ -178,7 +202,7 @@ You can run the emulators and FastAPI app directly on your local machine using P
    python emulators/pump_emulator.py
    ```
 
-3. Start the **Sensor Emulator** in another terminal:
+3. Start the **Sensor Emulator** in another terminal (exposes the Environment & Fault Console at `http://localhost:9990`):
 
    ```bash
    # Linux/macOS
@@ -210,12 +234,13 @@ You can run the emulators and FastAPI app directly on your local machine using P
 
 - **Serial Permission Denied**: If you get a "Permission denied" error when identifying the serial port, ensure you have rebooted or logged out/in after the installation script added you to the `dialout` group.
 - **Port Not Found (`/dev/pump_arduino` or `/dev/sensor_arduino`)**:
-  - The Arduinos are mapped by `udev` rules based on USB Vendor/Product IDs in `/etc/udev/rules.d/99-arduinos.rules`.
-  - **Sensor Arduino** (Arduino Mega): Vendor `2341`, Product `0042` -> `/dev/sensor_arduino`
-  - **Pump Arduino** (Official Arduino Uno R3): Vendor `2341`, Product `0043` -> `/dev/pump_arduino`
-  - **Pump Arduino** (Generic/Clone CH340 Uno): Vendor `1a86`, Product `7523` -> `/dev/pump_arduino`
-  - If you swap Arduino boards, run `lsusb` to confirm the IDs, update `/etc/udev/rules.d/99-arduinos.rules`, and reload with:
+  - VID/PID-only matching is forbidden because identical or clone boards can be swapped silently.
+  - Discover exact controller identities and install generated UDEV rules with:
     ```bash
-    sudo udevadm control --reload-rules && sudo udevadm trigger
+    sudo reactorctl firmware discover
+    sudo reactorctl firmware configure-udev
     ```
+  - Unique `ID_SERIAL_SHORT` is the default. For a serial-less board, configure exact `ID_PATH` values in `reactor.env` and pass `--acknowledge-cable-binding`; moving that cable then requires recommissioning.
+- **Wrong Services Start**: Run `docker compose config --services`. The output is controlled by `COMPOSE_PROFILES` in root `.env`; use only `simulation` or `hardware`, never both.
+- **Hardware Profile Refuses to Start**: Verify the exact MCU USB serial identities and `SENSOR_DEVICE_HOST`/`PUMP_DEVICE_HOST` in `.env`, then run `test -c /dev/sensor_arduino && test -c /dev/pump_arduino`. This refusal prevents silent emulator or device-identity fallback.
 - **Blank Web Page**: Ensure you are using a modern browser. Check the JS console (F12) for errors.

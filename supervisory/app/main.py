@@ -12,21 +12,25 @@ FastAPI Application serving:
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Depends
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from contextlib import asynccontextmanager
-from typing import List, Optional
+from typing import Optional
 from datetime import datetime
+from sqlalchemy import text
 from sqlalchemy.orm import Session
+import asyncio
 import io
 import csv
 import time
 import json
 import os
+import logging
 import urllib.request
 import urllib.error
 
 from .orchestrator import orchestrator
-from .database import engine, Base, get_db, RunsMetadata, Logs1s, Logs1m, Logs10m, ErrorLog
+from .config import settings
+from .database import get_db, RunsMetadata, Logs1s, assert_database_schema
 from .crud import get_history_downsampled, get_error_logs, get_run_analytics_summary
 
 
@@ -45,7 +49,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Reactor Supervisory Control & Process Analytics",
     description="Supervisory engine and telemetry pipeline for high-temperature bench reactor systems.",
-    version="2.0.0",
+    version="2.1.0",
     lifespan=lifespan
 )
 
@@ -62,6 +66,29 @@ app.add_middleware(
 # 1. Physical Actuation & State Control Endpoints
 # =====================================================================
 
+
+def _raise_control_error(exc: Exception):
+    if isinstance(exc, ValueError):
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    if isinstance(exc, ConnectionError):
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    if isinstance(exc, RuntimeError):
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    raise exc
+
+
+def _require_actuation_mode() -> None:
+    """Keep the real UI online while commissioning remains physically inert."""
+    if settings.REACTOR_MODE == "commissioning":
+        raise HTTPException(
+            status_code=423,
+            detail=(
+                "UNCOMMISSIONED: reactor actuation is locked until "
+                "reactorctl activate-hardware completes"
+            ),
+        )
+
+
 @app.post("/api/control/state/{state_id}", tags=["Control"])
 async def set_state(state_id: int):
     """
@@ -70,8 +97,12 @@ async def set_state(state_id: int):
     State 1: WARMUP (Preheating zones to target stabilization setpoints)
     State 2: WORKING (Full automated operation & dosing active)
     """
-    await orchestrator.set_state(state_id)
-    return {"status": "command_sent", "state": state_id}
+    _require_actuation_mode()
+    try:
+        result = await orchestrator.set_state(state_id)
+    except Exception as exc:
+        _raise_control_error(exc)
+    return {"status": "acknowledged", **result}
 
 
 @app.post("/api/control/setpoint", tags=["Control"])
@@ -83,14 +114,40 @@ async def set_setpoint(zone: int, value: float, rate: float = 0.0):
     Zone 2: Gas Headspace Reactor (°C)
     Rate: Ramp rate limit in °C/min (0.0 = step change / max PID response).
     """
-    await orchestrator.send_setpoint(zone, value, rate)
-    return {"status": "command_sent", "zone": zone, "value": value, "rate": rate}
+    _require_actuation_mode()
+    try:
+        await orchestrator.send_setpoint(zone, value, rate)
+    except Exception as exc:
+        _raise_control_error(exc)
+    return {"status": "accepted", "zone": zone, "value": value, "rate": rate}
+
+
+@app.post("/api/control/estop", tags=["Control"])
+async def emergency_stop():
+    """Latch the software safety trip and command both MCUs to a safe state."""
+    _require_actuation_mode()
+    return await orchestrator.trip_safety(
+        "ERR_OPERATOR_ESTOP",
+        "Operator activated emergency stop",
+        source="operator",
+    )
+
+
+@app.post("/api/control/safety/reset", tags=["Control"])
+async def reset_safety():
+    """Reset a trip only after safe, fresh STANDBY telemetry is verified."""
+    _require_actuation_mode()
+    try:
+        return await orchestrator.reset_safety()
+    except Exception as exc:
+        _raise_control_error(exc)
 
 
 @app.post("/api/control/alarm/silence", tags=["Alarms"])
 async def silence_alarm():
     """Silence audible buzzer hardware relay and web alarms for 5 minutes."""
-    return orchestrator.silence_alarms()
+    _require_actuation_mode()
+    return await orchestrator.silence_alarms()
 
 
 @app.get("/api/config/alarms", tags=["Alarms"])
@@ -102,21 +159,32 @@ async def get_alarm_config():
 @app.post("/api/config/alarms", tags=["Alarms"])
 async def update_alarm_config(config: dict):
     """Update high/low alarm trip thresholds across all thermal zones."""
-    return orchestrator.update_alarm_config(config)
+    try:
+        return orchestrator.update_alarm_config(config)
+    except Exception as exc:
+        _raise_control_error(exc)
 
 
 @app.post("/api/control/tare", tags=["Scale"])
 async def tare_loadcell():
     """Command Arduino Mega to tare the HX711 gravimetric load cell."""
-    await orchestrator.send_tare()
-    return {"status": "command_sent"}
+    _require_actuation_mode()
+    try:
+        await orchestrator.send_tare()
+    except Exception as exc:
+        _raise_control_error(exc)
+    return {"status": "confirmed"}
 
 
 @app.post("/api/control/calibrate", tags=["Scale"])
 async def calibrate_loadcell(value: float):
-    """Command Arduino Mega to calibrate scale calibration factor with a known test weight (grams)."""
-    await orchestrator.send_calibrate(value)
-    return {"status": "command_sent", "value": value}
+    """Calibrate the Mega load cell using a known test weight in kilograms."""
+    _require_actuation_mode()
+    try:
+        await orchestrator.send_calibrate(value)
+    except Exception as exc:
+        _raise_control_error(exc)
+    return {"status": "confirmed", "value": value}
 
 
 @app.post("/api/control/pump/manual", tags=["Pump"])
@@ -125,10 +193,14 @@ async def pump_manual(state: str, dir: int, speed: int):
     Manual pump override.
     state: 'run' or 'stop'
     dir: 0=Clockwise, 1=Counter-Clockwise
-    speed: Target RPM (0-350 RPM)
+    speed: Target RPM (0-240 RPM)
     """
-    await orchestrator.set_pump_manual(state, dir, speed)
-    return {"status": "ok"}
+    _require_actuation_mode()
+    try:
+        result = await orchestrator.set_pump_manual(state, dir, speed)
+    except Exception as exc:
+        _raise_control_error(exc)
+    return {"status": "acknowledged", **result}
 
 
 @app.post("/api/control/pump/auto", tags=["Pump"])
@@ -137,8 +209,27 @@ async def pump_auto(min_w: float, max_w: float, rec_rpm: int, dir: int = 0):
     Configure automated gravimetric feedback dosing mode.
     Maintains feedstock mass between min_w and max_w by engaging pump at rec_rpm.
     """
-    orchestrator.set_pump_auto(min_w, max_w, rec_rpm, dir)
-    return {"status": "ok"}
+    _require_actuation_mode()
+    try:
+        orchestrator.set_pump_auto(min_w, max_w, rec_rpm, dir)
+    except Exception as exc:
+        _raise_control_error(exc)
+    return {"status": "configured"}
+
+
+@app.get("/api/health", tags=["System"])
+async def health():
+    """Mode-aware readiness used by Docker and operators."""
+    status = orchestrator.health_status()
+    return JSONResponse(status_code=200 if status["ready"] else 503, content=status)
+
+
+@app.get("/api/live", tags=["System"])
+async def liveness(db: Session = Depends(get_db)):
+    """Process/database liveness independent of an operational safety latch."""
+    await asyncio.to_thread(assert_database_schema)
+    db.execute(text("SELECT 1"))
+    return {"status": "alive", "mode": orchestrator.health_status()["mode"]}
 
 
 # =====================================================================
@@ -220,7 +311,15 @@ async def get_run_status(db: Session = Depends(get_db)):
 @app.post("/api/run/resume", tags=["Runs"])
 async def resume_run():
     """Restore last known setpoints, ramp profiles, and pump parameters after power outage or reboot."""
-    restored = await orchestrator.restore_last_configuration()
+    _require_actuation_mode()
+    try:
+        restored = await orchestrator.restore_last_configuration()
+    except Exception as exc:
+        _raise_control_error(exc)
+    if not restored:
+        raise HTTPException(
+            status_code=409, detail="No safe stored configuration was available"
+        )
     return {"status": "ok", "restored": restored}
 
 
@@ -293,7 +392,7 @@ async def export_run(run_id: Optional[int] = None, db: Session = Depends(get_db)
     writer.writerow([
         "Timestamp", "Run_ID", "Uptime", "State",
         "Temp_Feed_Res", "Temp_Feed_Pre", "Temp_Liq_Reac", "Temp_Gas_Reac_Int", "Temp_Gas_Reac_Ext",
-        "Weight", "Pump_Speed", "H2_ppm",
+        "Weight", "Pump_Speed", "MQ8_Uncalibrated_mV",
         "Ramp_Feed_Pre", "Ramp_Liq_Reac", "Ramp_Gas_Reac", "Dosing_Rate_g_min", "Energy_kWh"
     ])
     
@@ -351,7 +450,7 @@ def get_host_manager_url() -> str:
     return "http://172.18.0.1:8001"
 
 
-def forward_to_host(method: str, path: str, data: Optional[dict] = None) -> dict:
+def _forward_to_host_sync(method: str, path: str, data: Optional[dict] = None) -> dict:
     """Execute synchronous HTTP request to host manager daemon with dev-environment mock fallbacks."""
     url = f"{get_host_manager_url()}{path}"
     headers = {"Content-Type": "application/json"}
@@ -363,11 +462,18 @@ def forward_to_host(method: str, path: str, data: Optional[dict] = None) -> dict
     except urllib.error.HTTPError as e:
         err_body = e.read().decode("utf-8")
         try:
-            return json.loads(err_body)
+            detail = json.loads(err_body)
         except Exception:
-            raise HTTPException(status_code=e.code, detail=err_body)
+            detail = err_body
+        raise HTTPException(status_code=e.code, detail=detail)
     except Exception as e:
-        # Fallback responses for local development or non-Pi hosts
+        if settings.APP_ENV != "development":
+            raise HTTPException(
+                status_code=502,
+                detail=f"Host manager communication error: {type(e).__name__}",
+            ) from e
+
+        # Explicit testing-only fallback responses for non-Pi development.
         if path == "/api/system/status":
             return {
                 "cpu_temp": 41.5,
@@ -395,46 +501,53 @@ def forward_to_host(method: str, path: str, data: Optional[dict] = None) -> dict
         raise HTTPException(status_code=502, detail=f"Host manager communication error: {e}")
 
 
+async def forward_to_host(
+    method: str, path: str, data: Optional[dict] = None
+) -> dict:
+    """Run blocking host-manager I/O off the safety heartbeat event loop."""
+    return await asyncio.to_thread(_forward_to_host_sync, method, path, data)
+
+
 @app.get("/api/system/status", tags=["Host System"])
 async def api_system_status():
     """Retrieve host telemetry (CPU temperature, RAM, disk space, active IPs, and SQLite DB size)."""
-    return forward_to_host("GET", "/api/system/status")
+    return await forward_to_host("GET", "/api/system/status")
 
 
 @app.get("/api/wifi/scan", tags=["Host Wi-Fi"])
 async def api_wifi_scan():
     """Scan and return visible 2.4/5GHz Wi-Fi SSIDs with signal strength percentages."""
-    return forward_to_host("GET", "/api/wifi/scan")
+    return await forward_to_host("GET", "/api/wifi/scan")
 
 
 @app.get("/api/wifi/status", tags=["Host Wi-Fi"])
 async def api_wifi_status():
     """Return active Wi-Fi operational mode (client mode vs 'Reactor-Rig' ad-hoc hotspot)."""
-    return forward_to_host("GET", "/api/wifi/status")
+    return await forward_to_host("GET", "/api/wifi/status")
 
 
 @app.post("/api/wifi/connect", tags=["Host Wi-Fi"])
 async def api_wifi_connect(req: dict):
     """Command host NetworkManager to join external Wi-Fi network with anti-lockout protection."""
-    return forward_to_host("POST", "/api/wifi/connect", data=req)
+    return await forward_to_host("POST", "/api/wifi/connect", data=req)
 
 
 @app.post("/api/wifi/hotspot", tags=["Host Wi-Fi"])
 async def api_wifi_hotspot():
     """Immediately force host Wi-Fi into open field hotspot mode ('Reactor-Rig' on 10.42.0.1)."""
-    return forward_to_host("POST", "/api/wifi/hotspot")
+    return await forward_to_host("POST", "/api/wifi/hotspot")
 
 
 @app.post("/api/system/reboot", tags=["Host System"])
 async def api_system_reboot():
     """Issue clean system reboot to Raspberry Pi operating system."""
-    return forward_to_host("POST", "/api/system/reboot")
+    return await forward_to_host("POST", "/api/system/reboot")
 
 
 @app.post("/api/system/restart-services", tags=["Host System"])
 async def api_system_restart_services():
     """Restart Docker Compose application containers via host daemon."""
-    return forward_to_host("POST", "/api/system/restart-services")
+    return await forward_to_host("POST", "/api/system/restart-services")
 
 
 @app.post("/api/system/exec", tags=["Host System"])
@@ -445,13 +558,13 @@ async def api_system_exec(req: dict):
     - 'test-buzzer': Triggers 1.5s active-high hardware pulse on GPIO 26 via pinctrl.
     - Standard shell commands (e.g. 'tailscale status', 'docker compose ps').
     """
-    return forward_to_host("POST", "/api/system/exec", data=req)
+    return await forward_to_host("POST", "/api/system/exec", data=req)
 
 
 @app.post("/api/system/password", tags=["Host System"])
 async def api_system_password(req: dict):
     """Safely update the host 'pi' user password using /usr/sbin/chpasswd with verification."""
-    return forward_to_host("POST", "/api/system/password", data=req)
+    return await forward_to_host("POST", "/api/system/password", data=req)
 
 
 # =====================================================================
@@ -471,6 +584,10 @@ async def websocket_endpoint(websocket: WebSocket):
             data = await queue.get()
             await websocket.send_json(data)
     except WebSocketDisconnect:
+        pass
+    except Exception as exc:
+        logging.getLogger("websocket").error("WebSocket stream failed: %s", exc)
+    finally:
         orchestrator.unsubscribe(queue)
 
 

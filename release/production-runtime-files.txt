@@ -1,0 +1,20 @@
+# Exact production runtime payload. Keep this file explicit: globs and
+# directories are intentionally unsupported by the release builder.
+compose.production.yml
+reactor.env.example
+grafana/provisioning/dashboards/dashboards.yaml
+grafana/provisioning/dashboards/reactor_operator_scada.json
+grafana/provisioning/dashboards/reactor_telemetry.json
+grafana/provisioning/datasources/sqlite.yaml
+host/system_manager.py
+deploy/production/bin/reactorctl
+deploy/production/lib/reactor_runtime.py
+deploy/production/install_runtime_tools.sh
+deploy/production/systemd/reactor-network-mode.service
+deploy/production/systemd/reactor-network-monitor.service
+deploy/production/systemd/reactor-network-handoff.service
+deploy/production/systemd/reactor-preflight.service
+deploy/production/systemd/reactor-stack.service
+deploy/production/systemd/reactor-stack-monitor.service
+deploy/production/systemd/reactor-report-refresh.service
+deploy/production/systemd/reactor-system-manager.service

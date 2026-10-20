@@ -4,10 +4,23 @@
   },
   "editable": true,
   "fiscalYearStartMonth": 0,
-  "graphTooltip": 1,
-  "id": null,
-  "links": [],
-  "liveNow": true,
+  "graphTooltip": 2,
+  "id": 3739087183421440,
+  "links": [
+    {
+      "asDropdown": false,
+      "icon": "dashboard",
+      "includeVars": false,
+      "keepTime": true,
+      "tags": [],
+      "targetBlank": false,
+      "title": "← Back to SCADA Command Center",
+      "tooltip": "Return to the real-time operator SCADA dashboard",
+      "type": "link",
+      "url": "/d/reactor-operator-scada"
+    }
+  ],
+  "liveNow": false,
   "panels": [
     {
       "collapsed": false,
@@ -117,7 +130,12 @@
           "queryText": "SELECT CAST(strftime('%s', timestamp) AS INT) AS time, temp_feed_pre AS \"Preheater\", temp_liq_reac AS \"Liquid Reactor\", temp_gas_reac_int AS \"Gas Headspace\", temp_gas_reac_ext AS \"Gas Skin\", temp_feed_res AS \"Feed Tank\" FROM logs_1s WHERE ('$run' IN ('$__all', '__ALL__', 'All', '') OR run_id = CAST('$run' AS INT)) ORDER BY timestamp ASC",
           "timeColumns": [
             "time"
-          ]
+          ],
+          "rawQueryText": "SELECT CAST(strftime('%s', timestamp) AS INT) AS time, temp_feed_pre AS \"Preheater\", temp_liq_reac AS \"Liquid Reactor\", temp_gas_reac_int AS \"Gas Headspace\", temp_gas_reac_ext AS \"Gas Skin\", temp_feed_res AS \"Feed Tank\" FROM logs_1s WHERE ('$run' IN ('$__all', '__ALL__', 'All', '') OR run_id = CAST('$run' AS INT)) ORDER BY timestamp ASC",
+          "datasource": {
+            "type": "frser-sqlite-datasource",
+            "uid": "Reactor-SQLite"
+          }
         }
       ]
     },
@@ -163,7 +181,15 @@
         {
           "queryType": "table",
           "refId": "A",
-          "queryText": "SELECT temp_liq_reac AS \"Liquid\", temp_gas_reac_int AS \"Gas Int\", temp_feed_pre AS \"Preheater\" FROM logs_1s WHERE ('$run' IN ('$__all', '__ALL__', 'All', '') OR run_id = CAST('$run' AS INT)) ORDER BY timestamp DESC LIMIT 1"
+          "queryText": "SELECT CAST(strftime('%s', timestamp) AS INT) AS time, temp_liq_reac AS \"Liquid\", temp_gas_reac_int AS \"Gas Int\", temp_feed_pre AS \"Preheater\" FROM logs_1s WHERE ('$run' IN ('$__all', '__ALL__', 'All', '') OR run_id = CAST('$run' AS INT)) ORDER BY timestamp DESC LIMIT 1",
+          "timeColumns": [
+            "time"
+          ],
+          "rawQueryText": "SELECT CAST(strftime('%s', timestamp) AS INT) AS time, temp_liq_reac AS \"Liquid\", temp_gas_reac_int AS \"Gas Int\", temp_feed_pre AS \"Preheater\" FROM logs_1s WHERE ('$run' IN ('$__all', '__ALL__', 'All', '') OR run_id = CAST('$run' AS INT)) ORDER BY timestamp DESC LIMIT 1",
+          "datasource": {
+            "type": "frser-sqlite-datasource",
+            "uid": "Reactor-SQLite"
+          }
         }
       ]
     },
@@ -211,7 +237,12 @@
           "queryText": "SELECT CAST(strftime('%s', timestamp) AS INT) AS time, heater_feed_pre AS \"Preheater Duty\", heater_liq_reac AS \"Liquid Duty\", heater_gas_reac AS \"Gas Duty\" FROM logs_1s WHERE ('$run' IN ('$__all', '__ALL__', 'All', '') OR run_id = CAST('$run' AS INT)) ORDER BY timestamp ASC",
           "timeColumns": [
             "time"
-          ]
+          ],
+          "rawQueryText": "SELECT CAST(strftime('%s', timestamp) AS INT) AS time, heater_feed_pre AS \"Preheater Duty\", heater_liq_reac AS \"Liquid Duty\", heater_gas_reac AS \"Gas Duty\" FROM logs_1s WHERE ('$run' IN ('$__all', '__ALL__', 'All', '') OR run_id = CAST('$run' AS INT)) ORDER BY timestamp ASC",
+          "datasource": {
+            "type": "frser-sqlite-datasource",
+            "uid": "Reactor-SQLite"
+          }
         }
       ]
     },
@@ -285,7 +316,12 @@
           "queryText": "SELECT CAST(strftime('%s', timestamp) AS INT) AS time, weight AS \"Mass (kg)\", pump_speed AS \"Pump Speed\" FROM logs_1s WHERE ('$run' IN ('$__all', '__ALL__', 'All', '') OR run_id = CAST('$run' AS INT)) ORDER BY timestamp ASC",
           "timeColumns": [
             "time"
-          ]
+          ],
+          "rawQueryText": "SELECT CAST(strftime('%s', timestamp) AS INT) AS time, weight AS \"Mass (kg)\", pump_speed AS \"Pump Speed\" FROM logs_1s WHERE ('$run' IN ('$__all', '__ALL__', 'All', '') OR run_id = CAST('$run' AS INT)) ORDER BY timestamp ASC",
+          "datasource": {
+            "type": "frser-sqlite-datasource",
+            "uid": "Reactor-SQLite"
+          }
         }
       ]
     },
@@ -303,7 +339,7 @@
     },
     {
       "id": 5,
-      "title": "Thermal Ramp Rates (\u00b0C/min)",
+      "title": "Thermal Ramp Rates (°C/min)",
       "type": "timeseries",
       "gridPos": {
         "h": 8,
@@ -381,7 +417,12 @@
           "queryText": "SELECT CAST(strftime('%s', timestamp) AS INT) AS time, ramp_feed_pre AS \"Preheater Ramp\", ramp_liq_reac AS \"Liquid Core Ramp\", ramp_gas_reac AS \"Gas Headspace Ramp\" FROM logs_1s WHERE ('$run' IN ('$__all', '__ALL__', 'All', '') OR run_id = CAST('$run' AS INT)) ORDER BY timestamp ASC",
           "timeColumns": [
             "time"
-          ]
+          ],
+          "rawQueryText": "SELECT CAST(strftime('%s', timestamp) AS INT) AS time, ramp_feed_pre AS \"Preheater Ramp\", ramp_liq_reac AS \"Liquid Core Ramp\", ramp_gas_reac AS \"Gas Headspace Ramp\" FROM logs_1s WHERE ('$run' IN ('$__all', '__ALL__', 'All', '') OR run_id = CAST('$run' AS INT)) ORDER BY timestamp ASC",
+          "datasource": {
+            "type": "frser-sqlite-datasource",
+            "uid": "Reactor-SQLite"
+          }
         }
       ]
     },
@@ -423,7 +464,12 @@
           "queryText": "SELECT CAST(strftime('%s', timestamp) AS INT) AS time, dosing_rate_g_min AS \"Dosing Rate (g/min)\" FROM logs_1s WHERE ('$run' IN ('$__all', '__ALL__', 'All', '') OR run_id = CAST('$run' AS INT)) ORDER BY timestamp ASC",
           "timeColumns": [
             "time"
-          ]
+          ],
+          "rawQueryText": "SELECT CAST(strftime('%s', timestamp) AS INT) AS time, dosing_rate_g_min AS \"Dosing Rate (g/min)\" FROM logs_1s WHERE ('$run' IN ('$__all', '__ALL__', 'All', '') OR run_id = CAST('$run' AS INT)) ORDER BY timestamp ASC",
+          "datasource": {
+            "type": "frser-sqlite-datasource",
+            "uid": "Reactor-SQLite"
+          }
         }
       ]
     },
@@ -489,7 +535,12 @@
           "queryText": "SELECT CAST(strftime('%s', timestamp) AS INT) AS time, energy_kwh AS \"Energy (kWh)\" FROM logs_1s WHERE ('$run' IN ('$__all', '__ALL__', 'All', '') OR run_id = CAST('$run' AS INT)) ORDER BY timestamp ASC",
           "timeColumns": [
             "time"
-          ]
+          ],
+          "rawQueryText": "SELECT CAST(strftime('%s', timestamp) AS INT) AS time, energy_kwh AS \"Energy (kWh)\" FROM logs_1s WHERE ('$run' IN ('$__all', '__ALL__', 'All', '') OR run_id = CAST('$run' AS INT)) ORDER BY timestamp ASC",
+          "datasource": {
+            "type": "frser-sqlite-datasource",
+            "uid": "Reactor-SQLite"
+          }
         }
       ]
     }
@@ -540,6 +591,6 @@
     ]
   },
   "timezone": "browser",
-  "title": "Reactor Controller \u2014 Live Telemetry & Analytics",
+  "title": "Reactor Controller — Live Telemetry & Analytics",
   "uid": "reactor-telemetry"
 }

@@ -1,0 +1,19 @@
+[Unit]
+Description=Reactor Controller production container stack
+Requires=reactor-preflight.service
+Wants=docker.service
+After=docker.service reactor-preflight.service
+Before=reactor-stack-monitor.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/reactorctl boot
+ExecStop=/usr/local/sbin/reactorctl _stack-stop
+RemainAfterExit=yes
+Restart=on-failure
+RestartSec=10
+TimeoutStartSec=300
+TimeoutStopSec=180
+
+[Install]
+WantedBy=multi-user.target

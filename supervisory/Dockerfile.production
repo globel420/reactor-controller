@@ -1,0 +1,25 @@
+# This multi-architecture manifest digest includes linux/arm64 for Pi OS 64-bit.
+FROM python:3.12.15-slim-trixie@sha256:a6e34c598f2467ed0e9a8d349809fcd8b5c603269512df273a0bb1784edc11b1
+
+ENV PATH=/opt/venv/bin:$PATH \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+RUN python -m venv /opt/venv
+
+COPY supervisory/requirements.txt /tmp/requirements.txt
+RUN pip install --no-cache-dir -r /tmp/requirements.txt \
+    && rm -f /tmp/requirements.txt
+
+WORKDIR /app
+RUN groupadd --gid 10001 reactor \
+    && useradd --uid 10001 --gid reactor --no-create-home --home-dir /nonexistent reactor \
+    && install -d -o reactor -g reactor /app/data /app/scripts /app/supervisory
+
+COPY --chown=reactor:reactor supervisory/app/ /app/supervisory/app/
+COPY --chown=reactor:reactor scripts/load_firmware_env.py /app/scripts/load_firmware_env.py
+
+USER 10001:10001
+EXPOSE 8000
+CMD ["uvicorn", "supervisory.app.main:app", "--host", "0.0.0.0", "--port", "8000"]

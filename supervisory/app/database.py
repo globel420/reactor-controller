@@ -28,11 +28,13 @@ Architecture Highlights:
      disconnected thermocouples, thermal limits).
 """
 
-from sqlalchemy import create_engine, event, text
+from sqlalchemy import create_engine, event, inspect, text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
 from datetime import datetime
 from typing import Optional
 import os
+import tempfile
+from pathlib import Path
 from .config import settings
 
 # Database Setup with SQLite WAL & timeout configuration
@@ -41,6 +43,13 @@ if "sqlite" in settings.DATABASE_URL:
     connect_args["timeout"] = 15
     if settings.DATABASE_URL.startswith("sqlite:///"):
         db_file_path = settings.DATABASE_URL.replace("sqlite:///", "")
+        if settings.TESTING:
+            resolved_db = Path(db_file_path).resolve()
+            temp_root = Path(tempfile.gettempdir()).resolve()
+            if temp_root not in resolved_db.parents:
+                raise RuntimeError(
+                    "REACTOR_TESTING requires DATABASE_URL inside the system temporary directory"
+                )
         db_dir = os.path.dirname(db_file_path)
         if db_dir:
             os.makedirs(db_dir, exist_ok=True)
@@ -58,6 +67,18 @@ if "sqlite" in settings.DATABASE_URL:
         cursor.close()
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+
+def assert_safe_test_database():
+    """Refuse destructive test setup unless the temp-database guard is active."""
+    if not settings.TESTING:
+        raise RuntimeError(
+            "Destructive test setup requires REACTOR_TESTING=true and a temporary DATABASE_URL"
+        )
+    if settings.DATABASE_URL.startswith("sqlite:///"):
+        resolved_db = Path(settings.DATABASE_URL.replace("sqlite:///", "")).resolve()
+        if Path(tempfile.gettempdir()).resolve() not in resolved_db.parents:
+            raise RuntimeError("Destructive tests require a database under the system temp directory")
 
 class Base(DeclarativeBase):
     pass
@@ -115,17 +136,19 @@ class LogMixin:
     control_state: Mapped[int] = mapped_column()
 
     # Sensors - Temperatures
-    temp_feed_res: Mapped[float] = mapped_column()
-    temp_feed_pre: Mapped[float] = mapped_column()
-    temp_liq_reac: Mapped[float] = mapped_column()
-    temp_gas_reac_int: Mapped[float] = mapped_column()
-    temp_gas_reac_ext: Mapped[float] = mapped_column()
+    temp_feed_res: Mapped[Optional[float]] = mapped_column(nullable=True)
+    temp_feed_pre: Mapped[Optional[float]] = mapped_column(nullable=True)
+    temp_liq_reac: Mapped[Optional[float]] = mapped_column(nullable=True)
+    temp_gas_reac_int: Mapped[Optional[float]] = mapped_column(nullable=True)
+    temp_gas_reac_ext: Mapped[Optional[float]] = mapped_column(nullable=True)
 
     # Sensors - Analog
-    h2_ppm: Mapped[float] = mapped_column()
+    # Legacy column name retained for schema compatibility; values are the
+    # uncalibrated MQ-8 analog signal in millivolts, not calibrated ppm.
+    h2_ppm: Mapped[Optional[float]] = mapped_column(nullable=True)
     
     # New Columns
-    weight: Mapped[float] = mapped_column(default=0.0)
+    weight: Mapped[Optional[float]] = mapped_column(default=0.0, nullable=True)
     pump_speed: Mapped[int] = mapped_column(default=0)
 
     # Actuators (Heater Duty Cycles)
@@ -169,11 +192,10 @@ def init_db():
        partitioned telemetry queries.
     """
     Base.metadata.create_all(bind=engine)
-    with engine.connect() as conn:
-        try:
-            res = conn.execute(text("PRAGMA table_info(runs_metadata)"))
-            existing_cols = {row[1] for row in res.fetchall()}
-            new_cols = {
+    with engine.begin() as conn:
+        res = conn.execute(text("PRAGMA table_info(runs_metadata)"))
+        existing_cols = {row[1] for row in res.fetchall()}
+        new_cols = {
                 "end_time": "DATETIME",
                 "description": "TEXT DEFAULT ''",
                 "last_sp_feed_pre": "REAL DEFAULT 0.0",
@@ -186,31 +208,70 @@ def init_db():
                 "last_auto_max": "REAL DEFAULT 0.0",
                 "last_auto_rec_rpm": "INTEGER DEFAULT 0",
                 "last_auto_dir": "INTEGER DEFAULT 0",
-            }
-            for col_name, col_type in new_cols.items():
-                if col_name not in existing_cols:
-                    conn.execute(text(f"ALTER TABLE runs_metadata ADD COLUMN {col_name} {col_type}"))
+        }
+        for col_name, col_type in new_cols.items():
+            if col_name not in existing_cols:
+                conn.execute(text(f"ALTER TABLE runs_metadata ADD COLUMN {col_name} {col_type}"))
 
-            analytics_cols = {
-                "ramp_feed_pre": "REAL DEFAULT 0.0",
-                "ramp_liq_reac": "REAL DEFAULT 0.0",
-                "ramp_gas_reac": "REAL DEFAULT 0.0",
-                "dosing_rate_g_min": "REAL DEFAULT 0.0",
-                "energy_kwh": "REAL DEFAULT 0.0",
-            }
+        analytics_cols = {
+            "ramp_feed_pre": "REAL DEFAULT 0.0",
+            "ramp_liq_reac": "REAL DEFAULT 0.0",
+            "ramp_gas_reac": "REAL DEFAULT 0.0",
+            "dosing_rate_g_min": "REAL DEFAULT 0.0",
+            "energy_kwh": "REAL DEFAULT 0.0",
+        }
 
-            for table_name in ["logs_1s", "logs_1m", "logs_10m"]:
-                r = conn.execute(text(f"PRAGMA table_info({table_name})"))
-                t_cols = {row[1] for row in r.fetchall()}
-                if "run_id" not in t_cols:
-                    conn.execute(text(f"ALTER TABLE {table_name} ADD COLUMN run_id INTEGER DEFAULT 1"))
-                    conn.execute(text(f"CREATE INDEX IF NOT EXISTS idx_{table_name}_run_ts ON {table_name}(run_id, timestamp)"))
-                for col_name, col_type in analytics_cols.items():
-                    if col_name not in t_cols:
-                        conn.execute(text(f"ALTER TABLE {table_name} ADD COLUMN {col_name} {col_type}"))
-            conn.commit()
-        except Exception:
-            pass
+        for table_name in ["logs_1s", "logs_1m", "logs_10m"]:
+            result = conn.execute(text(f"PRAGMA table_info({table_name})"))
+            table_columns = {row[1] for row in result.fetchall()}
+            if "run_id" not in table_columns:
+                conn.execute(
+                    text(
+                        f"ALTER TABLE {table_name} "
+                        "ADD COLUMN run_id INTEGER DEFAULT 1"
+                    )
+                )
+            conn.execute(
+                text(
+                    f"CREATE INDEX IF NOT EXISTS idx_{table_name}_run_ts "
+                    f"ON {table_name}(run_id, timestamp)"
+                )
+            )
+            for col_name, col_type in analytics_cols.items():
+                if col_name not in table_columns:
+                    conn.execute(
+                        text(
+                            f"ALTER TABLE {table_name} "
+                            f"ADD COLUMN {col_name} {col_type}"
+                        )
+                    )
+
+    assert_database_schema()
+
+
+def assert_database_schema() -> None:
+    """Raise unless every ORM table and column needed at runtime exists."""
+    inspector = inspect(engine)
+    actual_tables = set(inspector.get_table_names())
+    required_tables = set(Base.metadata.tables)
+    missing_tables = sorted(required_tables - actual_tables)
+    if missing_tables:
+        raise RuntimeError(
+            "Database schema is missing tables: " + ", ".join(missing_tables)
+        )
+
+    missing_columns = []
+    for table_name, table in Base.metadata.tables.items():
+        actual_columns = {
+            column["name"] for column in inspector.get_columns(table_name)
+        }
+        for column in table.columns:
+            if column.name not in actual_columns:
+                missing_columns.append(f"{table_name}.{column.name}")
+    if missing_columns:
+        raise RuntimeError(
+            "Database schema is missing columns: " + ", ".join(missing_columns)
+        )
 
 def get_db():
     """

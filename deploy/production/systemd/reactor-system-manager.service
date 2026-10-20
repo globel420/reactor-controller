@@ -1,0 +1,19 @@
+[Unit]
+Description=Reactor Controller host administration and physical buzzer bridge
+After=network.target reactor-network-mode.service
+Before=reactor-preflight.service reactor-stack.service
+
+[Service]
+Type=simple
+User=root
+Group=root
+WorkingDirectory=/opt/reactor-controller/current
+EnvironmentFile=/etc/reactor-controller/reactor.env
+Environment=REACTOR_ADMIN_USER=reactor
+Environment=REACTOR_NETWORK_MODE_OWNER=reactorctl
+ExecStart=/usr/bin/python3 /opt/reactor-controller/current/host/system_manager.py
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
